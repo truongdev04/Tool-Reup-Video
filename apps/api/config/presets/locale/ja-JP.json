@@ -1,0 +1,15 @@
+{
+  "locale": "ja-JP",
+  "name": "Tiếng Nhật",
+  "script": "cjk",
+  "direction": "ltr",
+  "line_break": "cjk",
+  "chars_per_line": 16,
+  "max_lines": 2,
+  "cps_max": 9.0,
+  "speech_rate_cps": 7.0,
+  "min_cue_ms": 1200,
+  "max_cue_ms": 7000,
+  "sentence_enders": ["。", "！", "？", "…", ".", "!", "?"],
+  "font_stack": ["Noto Sans JP", "Noto Sans"]
+}

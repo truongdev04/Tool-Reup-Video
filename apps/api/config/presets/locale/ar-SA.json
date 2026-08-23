@@ -1,0 +1,15 @@
+{
+  "locale": "ar-SA",
+  "name": "Tiếng Ả Rập",
+  "script": "arabic",
+  "direction": "rtl",
+  "line_break": "whitespace",
+  "chars_per_line": 40,
+  "max_lines": 2,
+  "cps_max": 17.0,
+  "speech_rate_cps": 13.0,
+  "min_cue_ms": 1000,
+  "max_cue_ms": 7000,
+  "sentence_enders": ["۔", ".", "!", "?", "؟", "…"],
+  "font_stack": ["Noto Sans Arabic", "Noto Sans"]
+}

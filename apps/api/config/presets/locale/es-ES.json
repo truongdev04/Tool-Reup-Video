@@ -1,0 +1,15 @@
+{
+  "locale": "es-ES",
+  "name": "Tiếng Tây Ban Nha (Tây Ban Nha)",
+  "script": "latin",
+  "direction": "ltr",
+  "line_break": "whitespace",
+  "chars_per_line": 42,
+  "max_lines": 2,
+  "cps_max": 17.0,
+  "speech_rate_cps": 14.0,
+  "min_cue_ms": 1000,
+  "max_cue_ms": 7000,
+  "sentence_enders": [".", "!", "?", "…", "¿", "¡"],
+  "font_stack": ["Noto Sans"]
+}
