@@ -1,0 +1,16 @@
+{
+  "id": "openai_tts",
+  "name": "OpenAI TTS",
+  "adapter": "openai_tts",
+  "base_url": "https://api.openai.com/v1",
+  "model": "tts-1",
+  "api_key_env": "OPENAI_API_KEY",
+  "sample_rate": 44100,
+  "usd_per_1m_chars": 15.0,
+  "voices": {
+    "en-US": "alloy",
+    "es-ES": "nova",
+    "ja-JP": "shimmer",
+    "vi-VN": "alloy"
+  }
+}

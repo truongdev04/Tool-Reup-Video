@@ -28,6 +28,12 @@ class FitPolicy:
     tolerance: float = DEFAULT_TOLERANCE
     allow_video_stretch: bool = True
     max_translate_attempts: int = 2
+    #: Co giãn hình quá ngưỡng này là NHÌN THẤY được trên màn hình. Vượt thì
+    #: thà chuyển manual review còn hơn xuất ra video giật hoặc chạy chậm.
+    max_video_stretch_ratio: float = 0.12
+    #: Audio ngắn hơn khung thì chèn im lặng — vô hại. Nhưng im lặng dài quá
+    #: nửa khung nghĩa là bản dịch bị hụt nội dung, cần người xem lại.
+    max_pad_ratio: float = 0.5
     #: Trần drift tích luỹ cho cả video (§15, DoD §21). Quyết định của từng đơn
     #: vị phải soi vào con số này, không được xét đơn vị đó một cách độc lập.
     max_cumulative_drift_ms: int = 300
@@ -57,6 +63,8 @@ class FitDecision:
     borrow_silence_ms: int = 0
     #: Số ms cần co giãn phần hình.
     video_adjust_ms: int = 0
+    #: Số ms im lặng chèn thêm vào cuối đơn vị khi audio đọc ngắn hơn khung.
+    pad_silence_ms: int = 0
     #: Budget ký tự mới, khi cần dịch lại cho ngắn/dài hơn.
     retry_char_budget: int | None = None
     drift_ms: int = 0
@@ -111,6 +119,27 @@ def decide(
     settled_drift = -fit.cumulative_drift_ms
     delta = actual - effective_target
 
+    # --- 0. Audio NGẮN hơn khung: chèn im lặng ------------------------------
+    # Hai chiều lệch không đối xứng. Đọc dài hơn khung là vấn đề thật, phải nén.
+    # Đọc ngắn hơn thì video cứ chạy tiếp và audio kết thúc sớm — chèn im lặng
+    # là xong, không việc gì phải đụng tới tốc độ đọc hay co giãn hình.
+    if delta < 0:
+        pad = -delta
+        if pad <= effective_target * policy.max_pad_ratio:
+            return FitDecision(
+                strategy=FitStrategy.PAD_SILENCE,
+                pad_silence_ms=pad, drift_ms=settled_drift,
+                reason=f"chèn {pad}ms im lặng — audio đọc ngắn hơn khung, không cần nén",
+            )
+        return FitDecision(
+            strategy=FitStrategy.MANUAL_REVIEW,
+            drift_ms=raw_delta, needs_manual_review=True,
+            reason=(
+                f"audio ngắn hơn khung {pad}ms (hơn {policy.max_pad_ratio:.0%} khung) — "
+                f"bản dịch nhiều khả năng bị hụt nội dung"
+            ),
+        )
+
     # --- 1. Dịch lại có ràng buộc độ dài -------------------------------------
     if fit.translate_attempts < policy.max_translate_attempts:
         return FitDecision(
@@ -147,11 +176,17 @@ def decide(
             )
 
     # --- 4. Co giãn hình (phương án cuối) ------------------------------------
-    if policy.allow_video_stretch and not fit.has_face:
+    stretch_ms = actual - effective_target
+    stretch_ratio = abs(stretch_ms) / effective_target if effective_target else 1.0
+    if (
+        policy.allow_video_stretch
+        and not fit.has_face
+        and stretch_ratio <= policy.max_video_stretch_ratio
+    ):
         return FitDecision(
             strategy=FitStrategy.VIDEO_STRETCH,
-            video_adjust_ms=actual - effective_target, drift_ms=settled_drift,
-            reason="co giãn hình ở đoạn không có mặt người",
+            video_adjust_ms=stretch_ms, drift_ms=settled_drift,
+            reason=f"co giãn hình {stretch_ratio:.1%} ở đoạn không có mặt người",
         )
 
     # --- Không ép được -------------------------------------------------------
@@ -161,7 +196,12 @@ def decide(
         needs_manual_review=True,
         reason=(
             f"lệch {raw_delta}ms, vượt mọi ngưỡng an toàn"
-            + (" và có mặt người nên không co giãn hình được" if fit.has_face else "")
+            + (
+                " và có mặt người nên không co giãn hình được"
+                if fit.has_face
+                else f" (co giãn hình cần {stretch_ratio:.0%}, "
+                     f"trần {policy.max_video_stretch_ratio:.0%})"
+            )
         ),
     )
 

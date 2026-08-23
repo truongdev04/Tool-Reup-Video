@@ -109,3 +109,21 @@ def to_language_code(locale: str | None) -> str | None:
     if not locale:
         return None
     return locale.split("-", 1)[0].split("_", 1)[0].lower() or None
+
+
+def effective_speech_rate(locale: str, tts_provider_id: str | None = None) -> float:
+    """Tốc độ đọc dùng để tính char_budget (§7.2).
+
+    Ưu tiên số ĐO THẬT từ provider TTS sẽ dùng; chỉ rơi về ước lượng chung của
+    locale preset khi chưa hiệu chuẩn. Chênh lệch không nhỏ: `say` đọc tiếng Tây
+    Ban Nha ~20 cps trong khi ước lượng chung là 14 cps.
+    """
+    fallback = load_locale(locale).speech_rate_cps
+    if not tts_provider_id:
+        return fallback
+    try:
+        from services.tts.registry import load_config as load_tts
+
+        return load_tts(tts_provider_id).speech_rate_for(locale, fallback)
+    except Exception:  # noqa: BLE001 — chưa cấu hình TTS thì dùng ước lượng
+        return fallback

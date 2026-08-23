@@ -49,6 +49,21 @@ class _Mutable(Stage):
         return StageResult(output_ref={"text": self.payload})
 
 
+class _Passthrough(Stage):
+    """Stage trung gian trả output HẰNG SỐ.
+
+    Đây chính là kịch bản mà việc nối `input_hash` sinh ra để xử lý: nếu chuỗi
+    cache chỉ dựa vào output_digest thì stage này nuốt mất thay đổi từ upstream
+    và mọi stage sau nó im lặng dùng kết quả cũ.
+    """
+
+    def __init__(self, name: StageName) -> None:
+        self.name = name
+
+    def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
+        return StageResult(output_ref={"passthrough": True})
+
+
 class _Counting(Stage):
     """Stage giả lập tts: đếm số lần thực sự chạy (không tính cache hit)."""
 
@@ -76,6 +91,7 @@ def test_dependents_khong_gom_stage_dat_tien():
 def test_cache_hit_khi_khong_doi_gi(ctx):
     tts = _Counting()
     register(_Mutable())
+    register(_Passthrough(StageName.DURATION_FIT))
     register(tts)
     orch = Orchestrator(ctx)
 
@@ -98,6 +114,7 @@ def test_upstream_doi_thi_downstream_mat_cache(ctx):
     translate = _Mutable()
     tts = _Counting()
     register(translate)
+    register(_Passthrough(StageName.DURATION_FIT))
     register(tts)
     orch = Orchestrator(ctx)
 

@@ -1,0 +1,16 @@
+{
+  "id": "elevenlabs",
+  "name": "ElevenLabs",
+  "adapter": "elevenlabs",
+  "base_url": "https://api.elevenlabs.io/v1",
+  "model": "eleven_multilingual_v2",
+  "api_key_env": "ELEVENLABS_API_KEY",
+  "sample_rate": 44100,
+  "usd_per_1m_chars": 300.0,
+  "voices": {
+    "en-US": "21m00Tcm4TlvDq8ikWAM",
+    "es-ES": "21m00Tcm4TlvDq8ikWAM",
+    "ja-JP": "21m00Tcm4TlvDq8ikWAM",
+    "vi-VN": "21m00Tcm4TlvDq8ikWAM"
+  }
+}

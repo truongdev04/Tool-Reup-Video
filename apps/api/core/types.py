@@ -119,6 +119,7 @@ class FitStrategy(StrEnum):
     NONE = "none"
     CONSTRAINED_TRANSLATION = "constrained_translation"
     BORROW_SILENCE = "borrow_silence"
+    PAD_SILENCE = "pad_silence"
     TEMPO_ADJUST = "tempo_adjust"
     VIDEO_STRETCH = "video_stretch"
     MANUAL_REVIEW = "manual_review"

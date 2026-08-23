@@ -19,7 +19,7 @@ from db.models import (
     Transcript,
     TranslationUnit,
 )
-from services.presets import load_locale
+from services.presets import effective_speech_rate, load_locale
 from workers.segment_planner.planner import RawSegment, plan
 
 
@@ -35,6 +35,12 @@ class SegmentPlanStage(Stage):
         return {
             "locale": ctx.locale,
             "source_locale": source.source_locale if source else None,
+            # char_budget phụ thuộc tốc độ đọc của provider TTS sẽ dùng, nên
+            # đổi provider phải tính lại budget (§7.2).
+            "tts_provider": ctx.presets.get("tts_provider"),
+            "speech_rate": effective_speech_rate(
+                ctx.locale, ctx.presets.get("tts_provider")
+            ),
         }
 
     def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
@@ -77,7 +83,11 @@ class SegmentPlanStage(Stage):
             )
             for r in rows
         ]
-        planned = plan(segments, source_preset=source_preset, target_preset=target_preset)
+        rate = effective_speech_rate(ctx.locale, ctx.presets.get("tts_provider"))
+        planned = plan(
+            segments, source_preset=source_preset, target_preset=target_preset,
+            speech_rate_cps=rate,
+        )
 
         # Idempotent (§11.1): xoá kết quả cũ của chính job này trước khi ghi lại.
         self._clear_previous(ctx)
@@ -115,6 +125,7 @@ class SegmentPlanStage(Stage):
                 "merge_ratio": merged_ratio,
                 "transcreation_units": sum(1 for u in planned if u.needs_transcreation),
                 "total_char_budget": sum(u.char_budget for u in planned),
+                "speech_rate_cps": rate,
             },
             usage={"segments_processed": len(rows)},
         )

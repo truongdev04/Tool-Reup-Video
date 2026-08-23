@@ -205,6 +205,11 @@ class TranslationUnit(Base, PKMixin, TimestampMixin):
 
     __table_args__ = (Index("ix_tu_job_idx", "render_job_id", "idx"),)
 
+    @property
+    def duration_ms(self) -> int:
+        """Khung thời gian gốc mà bản dịch phải đọc vừa (§7)."""
+        return self.end_ms - self.start_ms
+
 
 class TTSChunk(Base, PKMixin, TimestampMixin):
     """Tầng 3 — chunk TTS, cắt theo ngữ điệu tự nhiên.

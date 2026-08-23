@@ -78,14 +78,16 @@ def test_tempo_vuot_nguong_thi_khong_dung():
 
 
 def test_uu_tien_4_co_gian_hinh_khi_khong_co_mat_nguoi():
-    d = _decide(6000, 7400, translate_attempts=2, has_face=False)
+    # 700/6000 = 11,7% — vượt dung sai và ngoài ngưỡng tempo, nhưng vẫn dưới
+    # trần co giãn hình 12%.
+    d = _decide(6000, 6700, translate_attempts=2, has_face=False)
     assert d.strategy is FitStrategy.VIDEO_STRETCH
-    assert d.video_adjust_ms == 1400
+    assert d.video_adjust_ms == 700
 
 
 def test_co_mat_nguoi_thi_cam_co_gian_hinh():
     """Co giãn hình khi có mặt người sẽ phá lip-sync — phải chuyển manual review."""
-    d = _decide(6000, 7400, translate_attempts=2, has_face=True)
+    d = _decide(6000, 6700, translate_attempts=2, has_face=True)
     assert d.strategy is FitStrategy.MANUAL_REVIEW
     assert d.needs_manual_review
     assert "mặt người" in d.reason
@@ -101,12 +103,33 @@ def test_khong_ep_duoc_thi_danh_dau_chu_khong_ep_bua():
     assert d.tempo_ratio == 1.0, "không được âm thầm áp tempo ngoài ngưỡng"
 
 
-def test_doc_ngan_hon_khung_hinh_cung_duoc_xu_ly():
-    """EN -> JA thường co lại, không phải lúc nào cũng dài ra."""
+def test_doc_ngan_hon_khung_thi_chen_im_lang():
+    """Hai chiều lệch KHÔNG đối xứng (§7.2).
+
+    Đọc dài hơn khung là vấn đề thật, phải nén. Đọc ngắn hơn thì video cứ chạy
+    tiếp và audio kết thúc sớm — chèn im lặng là xong. Co giãn hình 25% để bù
+    một khoảng lặng là nhìn thấy rõ trên màn hình mà chẳng để làm gì.
+    """
     d = _decide(6000, 4800, translate_attempts=2)
-    assert d.strategy in (FitStrategy.TEMPO_ADJUST, FitStrategy.VIDEO_STRETCH,
-                          FitStrategy.MANUAL_REVIEW)
-    assert d.strategy is not FitStrategy.BORROW_SILENCE, "đọc ngắn thì mượn im lặng vô nghĩa"
+    assert d.strategy is FitStrategy.PAD_SILENCE
+    assert d.pad_silence_ms == 1200
+    assert d.tempo_ratio == 1.0, "không được đụng tốc độ đọc chỉ vì audio ngắn"
+    assert d.video_adjust_ms == 0, "không được co giãn hình chỉ vì audio ngắn"
+    assert d.drift_ms == 0
+
+
+def test_audio_ngan_qua_nua_khung_thi_bao_hut_noi_dung():
+    """Im lặng dài quá nửa khung nghĩa là bản dịch bị hụt, không phải lệch nhịp."""
+    d = _decide(6000, 2000, translate_attempts=2)
+    assert d.strategy is FitStrategy.MANUAL_REVIEW
+    assert "hụt nội dung" in d.reason
+
+
+def test_co_gian_hinh_co_tran():
+    """Co giãn hình quá ngưỡng là nhìn thấy được — thà chuyển manual review."""
+    d = _decide(6000, 7400, translate_attempts=2, has_face=False)
+    assert d.strategy is FitStrategy.MANUAL_REVIEW, "lệch 23% mà vẫn co giãn hình là quá đà"
+    assert "trần" in d.reason
 
 
 def test_fitter_tu_chan_khong_de_drift_don_qua_nguong():
@@ -146,7 +169,7 @@ def test_da_co_drift_thi_don_vi_sau_phai_doc_bu_nguoc():
 
 
 def test_fit_thanh_cong_keo_tong_drift_ve_khong():
-    d = _decide(6000, 6450, translate_attempts=2, cumulative_drift_ms=250)
+    d = _decide(6000, 6100, translate_attempts=2, cumulative_drift_ms=250)
     assert d.strategy is not FitStrategy.NONE
     assert 250 + d.drift_ms == 0, "sau khi fit, drift tích luỹ phải về 0"
 
@@ -155,6 +178,7 @@ def test_chien_luoc_thanh_cong_khong_de_lai_drift():
     for d in (
         _decide(6000, 6900, available_silence_ms=1200, translate_attempts=2),
         _decide(6000, 6450, translate_attempts=2),
-        _decide(6000, 7400, translate_attempts=2),
+        _decide(6000, 6700, translate_attempts=2),
+        _decide(6000, 4800, translate_attempts=2),
     ):
         assert d.drift_ms == 0, f"{d.strategy} phải khử hết lệch, không để dồn"

@@ -127,6 +127,7 @@ def assign_budgets(
     units: list[PlannedUnit],
     *,
     target_preset: LocalePreset,
+    speech_rate_cps: float | None = None,
 ) -> list[PlannedUnit]:
     """Gán char_budget cho từng đơn vị — chiến lược fit rẻ nhất (§7.2 #1).
 
@@ -134,8 +135,9 @@ def assign_budgets(
     nên bản tiếng Nhật tự nhiên được budget ký tự nhỏ hơn bản tiếng Tây Ban Nha
     cho cùng một đoạn.
     """
+    rate = speech_rate_cps or target_preset.speech_rate_cps
     for unit in units:
-        unit.char_budget = target_preset.char_budget_for(unit.duration_ms)
+        unit.char_budget = max(1, round(unit.duration_ms / 1000 * rate))
     return units
 
 
@@ -175,8 +177,15 @@ def plan(
     *,
     source_preset: LocalePreset,
     target_preset: LocalePreset,
+    speech_rate_cps: float | None = None,
 ) -> list[PlannedUnit]:
-    """Chạy cả ba bước: gộp → gán budget → đánh dấu transcreation."""
+    """Chạy cả ba bước: gộp → gán budget → đánh dấu transcreation.
+
+    `speech_rate_cps` nên là số đã hiệu chuẩn từ provider TTS sẽ dùng; bỏ trống
+    thì rơi về ước lượng chung của locale preset (§7.2).
+    """
     units = merge_to_units(segments, source_preset=source_preset)
-    units = assign_budgets(units, target_preset=target_preset)
+    units = assign_budgets(
+        units, target_preset=target_preset, speech_rate_cps=speech_rate_cps
+    )
     return flag_transcreation(units)

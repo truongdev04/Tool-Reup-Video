@@ -1,0 +1,28 @@
+{
+  "id": "macos_say",
+  "name": "macOS say (local, miễn phí, không cần API key)",
+  "adapter": "macos_say",
+  "api_key_env": null,
+  "default_rate": 175,
+  "sample_rate": 44100,
+  "usd_per_1m_chars": 0.0,
+  "voices": {
+    "en-US": "Samantha",
+    "es-ES": "Mónica",
+    "es-MX": "Paulina",
+    "ja-JP": "Kyoko",
+    "vi-VN": "Linh",
+    "fr-FR": "Thomas",
+    "de-DE": "Anna",
+    "it-IT": "Alice",
+    "pt-BR": "Luciana",
+    "ko-KR": "Yuna",
+    "zh-CN": "Tingting"
+  },
+  "speech_rate_cps": {
+    "en-US": 18.7,
+    "es-ES": 19.93,
+    "ja-JP": 5.85,
+    "vi-VN": 15.19
+  }
+}
