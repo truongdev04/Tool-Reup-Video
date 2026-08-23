@@ -57,42 +57,90 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest apps/api/tests -q
 ```
 
-## Trạng thái: Phase 0 xong
+## Trạng thái
 
-Phase 0 (docs §20) dựng phần nền để Phase 1–3 không phải viết lại:
+Pipeline chạy thật tới `translate`. Clip mẫu 7s, 2 locale: **~9s** lần đầu,
+**~0,04s** khi dùng cache (ngân sách DoD §21 là 2 phút).
 
-| Hạng mục | Trạng thái |
-|---|---|
-| 23 bảng data model (docs §10) | ✅ `apps/api/db/models.py` |
-| Stage contract (docs §11.1) | ✅ `apps/api/core/stage.py` |
-| Orchestrator: cache, retry, partial re-run (§11.3, §16) | ✅ `apps/api/core/orchestrator.py` |
-| Storage layout + retention (§12, §17.2) | ✅ `apps/api/services/storage.py` |
-| Fixture clip 10s (§21) | ✅ `apps/api/tests/fixtures/make_fixture.py` |
-| Harness chạy tuần tự 18 stage (§4) | ✅ `scripts/run_pipeline.py` |
-| Stage đã implement | `ingest`, `analyze` — 16 stage còn lại là stub giữ đúng contract |
+| Stage | Trạng thái | Công nghệ |
+|---|---|---|
+| `ingest` | ✅ | checksum, rights_note bắt buộc |
+| `analyze` | ✅ | ffprobe |
+| `separate` | ✅ | Demucs htdemucs trên MPS |
+| `stt` | ✅ | mlx-whisper (Metal), word timestamps |
+| `segment_plan` | ✅ | logic thuần |
+| `translate` | ✅ | 8 provider, xem bên dưới |
+| `duration_fit` | 🟡 | logic xong, chờ TTS để nối vào pipeline |
+| `diarize`, `tts`, `forced_align`, `timeline_assembly`, `subtitle`, `render`, `qc`, `publish` | ⬜ | stub giữ đúng contract |
 
-Clip 10s chạy hết pipeline **~0,3 s** (ngân sách DoD §21 là 2 phút), lần 2 dùng
-cache hoàn toàn.
+Nền tảng Phase 0: 23 bảng data model (§10), stage contract (§11.1),
+orchestrator có cache/retry/partial re-run (§11.3, §16), storage layout (§12),
+harness (§21). **66 test.**
 
-### Hai điểm lệch khỏi kế hoạch (có chủ ý)
+## Provider LLM
 
-1. **Storage layout** (§12) — kế hoạch vẽ layout phẳng theo project, nhưng một
-   source sinh nhiều job (mỗi locale một job) nên bản ES và JA sẽ ghi đè nhau.
-   Artifact phụ thuộc locale được chuyển xuống `jobs/{job_id}/`; artifact dùng
-   chung (source, analysis, separated, transcript) giữ ở cấp project để cache
-   được giữa các locale. Chi tiết trong `services/storage.py`.
+Khai báo bằng file JSON trong `apps/api/config/providers/`, **thêm provider mới
+không phải sửa code**:
 
-2. **Cache key nối chuỗi giữa các stage** (§16) — kế hoạch chỉ nêu cache key gồm
-   `source checksum + provider + config version`. Như vậy chưa đủ: stage sau
-   không biết stage trước đã đổi kết quả, nên partial re-run sẽ im lặng tái dùng
-   audio cũ. Cache key nay gồm cả `(input_hash, output_digest)` của các stage
-   upstream. Xem `Orchestrator._effective_key_of` và
-   `tests/test_cache_chain.py`.
+| Provider | Adapter | Cần API key |
+|---|---|---|
+| `claude` | anthropic | `ANTHROPIC_API_KEY` |
+| `openai` | openai_compatible | `OPENAI_API_KEY` |
+| `gemini` | gemini | `GEMINI_API_KEY` |
+| `openrouter` | openai_compatible | `OPENROUTER_API_KEY` |
+| `9router` | openai_compatible | `NINEROUTER_API_KEY` |
+| `ollama` | openai_compatible | không — chạy local |
+| `lmstudio` | openai_compatible | không — chạy local |
+| `mock` | mock | không — dùng cho test |
+
+Phần lớn provider (OpenRouter, 9Router, Groq, DeepSeek, Together, Ollama,
+LM Studio, vLLM...) đều dùng API tương thích OpenAI, nên chỉ cần thả một file
+JSON là xong:
+
+```json
+{
+  "id": "ten-cua-ban",
+  "name": "Nhà cung cấp của bạn",
+  "adapter": "openai_compatible",
+  "base_url": "https://api.example.com/v1",
+  "model": "ten-model",
+  "api_key_env": "TEN_BIEN_MOI_TRUONG"
+}
+```
+
+Chọn provider khi chạy:
+
+```bash
+VLA_TRANSLATION_PROVIDER=claude .venv/bin/python scripts/run_pipeline.py
+```
+
+API key chỉ đọc từ biến môi trường tại thời điểm gọi, **không bao giờ lưu vào
+database hay ghi ra log** (§18.1).
+
+### Ba điểm lệch khỏi kế hoạch (có chủ ý)
+
+1. **Storage layout** (§12) — artifact phụ thuộc locale chuyển xuống
+   `jobs/{job_id}/`; layout phẳng của kế hoạch khiến bản ES và JA ghi đè nhau.
+   Artifact dùng chung (source, analysis, separated, transcript) giữ ở cấp
+   project để cache được giữa các locale.
+
+2. **Cache key nối chuỗi giữa các stage** (§16) — kế hoạch chỉ nêu
+   `source checksum + provider + config version`. Như vậy stage sau không biết
+   stage trước đã đổi kết quả, nên partial re-run sẽ im lặng tái dùng audio cũ.
+   Cache key nay gồm cả `(input_hash, output_digest)` của upstream.
+
+3. **Phạm vi cache** (§16) — thêm `CacheScope`. Stage không phụ thuộc locale
+   (`ingest`, `analyze`, `separate`, `stt`) dùng chung kết quả giữa mọi bản ngôn
+   ngữ. Với video 60 phút × 10 locale, đây là chênh lệch giữa chạy STT 1 lần và
+   10 lần.
+
+### Số liệu cần hiệu chuẩn
+
+`speech_rate_cps` trong `config/presets/locale/*.json` hiện là **ước lượng**,
+chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift. Phải đo lại sau khi chốt
+provider TTS, rồi bật cờ `speech_rate_calibrated`.
 
 ### Việc tiếp theo
 
-Phase 1 (docs §20): trục localization — `separate` → `stt` → `segment_plan` →
-`translate` → `duration_fit` → `tts` → `forced_align` → `timeline_assembly` →
-`subtitle` → `render`.
-
-Trước khi bắt đầu, chốt các quyết định còn mở ở [docs/decisions.md](docs/decisions.md).
+`tts` → `forced_align` → `timeline_assembly` → `subtitle` → `render`.
+Quyết định còn mở: [docs/decisions.md](docs/decisions.md).

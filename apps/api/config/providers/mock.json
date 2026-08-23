@@ -1,0 +1,9 @@
+{
+  "id": "mock",
+  "name": "Mock (test, không gọi mạng)",
+  "adapter": "mock",
+  "model": "mock-v1",
+  "api_key_env": null,
+  "usd_per_1m_input": 0.0,
+  "usd_per_1m_output": 0.0
+}

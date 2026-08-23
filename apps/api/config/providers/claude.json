@@ -1,0 +1,9 @@
+{
+  "id": "claude",
+  "name": "Anthropic Claude",
+  "adapter": "anthropic",
+  "model": "claude-sonnet-5",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "max_tokens": 4096,
+  "temperature": 0.3
+}

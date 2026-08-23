@@ -1,0 +1,13 @@
+{
+  "id": "ollama",
+  "name": "Ollama (chạy local, không cần API key)",
+  "adapter": "openai_compatible",
+  "base_url": "http://localhost:11434/v1",
+  "model": "qwen2.5:14b",
+  "api_key_env": null,
+  "max_tokens": 4096,
+  "temperature": 0.3,
+  "timeout_s": 300.0,
+  "usd_per_1m_input": 0.0,
+  "usd_per_1m_output": 0.0
+}

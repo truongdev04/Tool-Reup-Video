@@ -1,0 +1,10 @@
+{
+  "id": "9router",
+  "name": "9Router",
+  "adapter": "openai_compatible",
+  "base_url": "https://api.9router.com/v1",
+  "model": "gpt-4o",
+  "api_key_env": "NINEROUTER_API_KEY",
+  "max_tokens": 4096,
+  "temperature": 0.3
+}

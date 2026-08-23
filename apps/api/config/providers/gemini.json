@@ -1,0 +1,10 @@
+{
+  "id": "gemini",
+  "name": "Google Gemini",
+  "adapter": "gemini",
+  "base_url": "https://generativelanguage.googleapis.com/v1beta",
+  "model": "gemini-2.0-flash",
+  "api_key_env": "GEMINI_API_KEY",
+  "max_tokens": 4096,
+  "temperature": 0.3
+}

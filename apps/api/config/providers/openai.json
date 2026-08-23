@@ -1,0 +1,10 @@
+{
+  "id": "openai",
+  "name": "OpenAI",
+  "adapter": "openai_compatible",
+  "base_url": "https://api.openai.com/v1",
+  "model": "gpt-4o",
+  "api_key_env": "OPENAI_API_KEY",
+  "max_tokens": 4096,
+  "temperature": 0.3
+}
