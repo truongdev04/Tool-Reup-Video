@@ -153,3 +153,17 @@ def test_speech_rate_chua_hieu_chuan_duoc_danh_dau():
         assert not preset.speech_rate_calibrated, (
             f"{loc} tự nhận đã hiệu chuẩn — chỉ được set cờ này sau khi đo bằng TTS thật"
         )
+
+
+def test_clip_ngan_khong_bi_danh_transcreation_toan_bo(en, es):
+    """Cửa sổ hook/CTA cố định sẽ phủ trọn clip ngắn và đánh dấu mọi đơn vị —
+    làm mất hẳn ý nghĩa phân biệt (§6.7)."""
+    segments = [
+        _seg(0, 0, 1500, "Opening line."),
+        _seg(1, 1600, 3200, "Middle line."),
+        _seg(2, 3300, 5000, "Closing line."),
+    ]
+    units = plan(segments, source_preset=en, target_preset=es)
+    flagged = [u.needs_transcreation for u in units]
+    assert not all(flagged), "clip 5s không được đánh dấu transcreation toàn bộ"
+    assert flagged[0] or flagged[-1], "vẫn phải bắt được ít nhất hook hoặc CTA"

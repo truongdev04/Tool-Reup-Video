@@ -86,6 +86,22 @@ STAGE_DEPENDENCIES: dict[StageName, tuple[StageName, ...]] = {
 }
 
 
+class CacheScope(StrEnum):
+    """Phạm vi tái dùng kết quả của một stage (§16).
+
+    SOURCE: kết quả không phụ thuộc locale đích (tách nhạc nền, STT, phân tích
+    media) nên MỌI bản ngôn ngữ của cùng một video dùng chung. Đây là chỗ tiết
+    kiệm lớn nhất: STT một video 60 phút cho 10 locale phải chạy 1 lần, không
+    phải 10 lần.
+
+    JOB: kết quả gắn với một job cụ thể (bản dịch, TTS, subtitle) — output_ref
+    trỏ tới bản ghi của chính job đó nên không được dùng chéo.
+    """
+
+    SOURCE = "source"
+    JOB = "job"
+
+
 class JobStatus(StrEnum):
     """Trạng thái job/stage — docs §16."""
 

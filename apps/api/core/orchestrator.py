@@ -20,8 +20,14 @@ from typing import Any
 from sqlalchemy import select
 
 from core.hashing import output_digest, stage_input_hash
-from core.stage import StageContext, StageResult, get_stage
-from core.types import PIPELINE_ORDER, STAGE_DEPENDENCIES, JobStatus, StageName
+from core.stage import NonRetryableError, StageContext, StageResult, get_stage
+from core.types import (
+    PIPELINE_ORDER,
+    STAGE_DEPENDENCIES,
+    CacheScope,
+    JobStatus,
+    StageName,
+)
 from db.base import utcnow
 from db.models import ErrorLog, RenderJob, StageRun
 
@@ -85,17 +91,29 @@ class Orchestrator:
 
     # -- cache -------------------------------------------------------------
 
-    def _lookup_cache(self, stage: StageName, input_hash: str) -> StageRun | None:
+    def _lookup_cache(
+        self, stage: StageName, input_hash: str, scope: CacheScope
+    ) -> StageRun | None:
+        """Tra cache theo phạm vi của stage (§16).
+
+        Stage SOURCE tra theo input_hash trên MỌI job: input_hash đã gồm
+        source checksum, provider, provider version và config version nên đủ
+        định danh, và kết quả không phụ thuộc locale. Nhờ vậy bản ES và JA của
+        cùng một video dùng chung một lần tách nhạc nền và một lần STT.
+
+        Stage JOB tra trong phạm vi job vì output_ref trỏ tới bản ghi của
+        chính job đó.
+        """
+        conditions = [
+            StageRun.stage == stage,
+            StageRun.input_hash == input_hash,
+            StageRun.status == JobStatus.SUCCEEDED,
+        ]
+        if scope is CacheScope.JOB:
+            conditions.append(StageRun.render_job_id == self.ctx.job_id)
+
         return self.ctx.session.scalars(
-            select(StageRun)
-            .where(
-                StageRun.render_job_id == self.ctx.job_id,
-                StageRun.stage == stage,
-                StageRun.input_hash == input_hash,
-                StageRun.status == JobStatus.SUCCEEDED,
-            )
-            .order_by(StageRun.created_at.desc())
-            .limit(1)
+            select(StageRun).where(*conditions).order_by(StageRun.created_at.desc()).limit(1)
         ).first()
 
     def _effective_key_of(self, stage: StageName) -> str:
@@ -115,15 +133,14 @@ class Orchestrator:
         if stage in self._keys:
             input_hash, digest = self._keys[stage]
         else:
+            conditions = [
+                StageRun.stage == stage,
+                StageRun.status.in_((JobStatus.SUCCEEDED, JobStatus.NEEDS_REVIEW)),
+            ]
+            if get_stage(stage).cache_scope is CacheScope.JOB:
+                conditions.append(StageRun.render_job_id == self.ctx.job_id)
             row = self.ctx.session.scalars(
-                select(StageRun)
-                .where(
-                    StageRun.render_job_id == self.ctx.job_id,
-                    StageRun.stage == stage,
-                    StageRun.status.in_((JobStatus.SUCCEEDED, JobStatus.NEEDS_REVIEW)),
-                )
-                .order_by(StageRun.created_at.desc())
-                .limit(1)
+                select(StageRun).where(*conditions).order_by(StageRun.created_at.desc()).limit(1)
             ).first()
             input_hash = row.input_hash if row else ""
             digest = output_digest(row.output_ref) if row else ""
@@ -164,7 +181,7 @@ class Orchestrator:
             },
         )
 
-        if not force and (hit := self._lookup_cache(stage_name, input_hash)):
+        if not force and (hit := self._lookup_cache(stage_name, input_hash, stage.cache_scope)):
             log.info("cache hit: %s", stage_name)
             self._keys[stage_name] = (input_hash, output_digest(hit.output_ref))
             return StageOutcome(
@@ -191,13 +208,18 @@ class Orchestrator:
                 run.finished_at = utcnow()
                 run.duration_ms = elapsed
                 run.error_message = str(exc)[:2000]
+                retryable = not isinstance(exc, NonRetryableError)
                 session.add(ErrorLog(
                     render_job_id=self.ctx.job_id, stage=stage_name,
                     message=str(exc)[:2000], attempt=attempt,
                     detail={"type": type(exc).__name__},
+                    is_retryable=retryable,
                 ))
                 session.flush()
                 last_error = exc
+                if not retryable:
+                    log.error("stage %s lỗi không thể retry: %s", stage_name, exc)
+                    break
                 log.warning("stage %s lỗi (lần %d): %s", stage_name, attempt, exc)
                 continue
 

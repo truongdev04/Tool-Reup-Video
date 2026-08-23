@@ -12,29 +12,32 @@ from typing import Any
 from sqlalchemy import select
 
 from core.hashing import file_checksum
-from core.stage import Stage, StageContext, StageResult
-from core.types import ArtifactKind, StageName
+from core.stage import NonRetryableError, Stage, StageContext, StageResult
+from core.types import CacheScope, ArtifactKind, StageName
 from db.models import SourceVideo
 
 
 class IngestStage(Stage):
     name = StageName.INGEST
+    cache_scope = CacheScope.SOURCE
 
     def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
         source = ctx.session.scalars(
             select(SourceVideo).where(SourceVideo.checksum == ctx.source_checksum)
         ).first()
         if source is None:
-            raise ValueError(f"chưa đăng ký source có checksum {ctx.source_checksum[:12]}")
+            raise NonRetryableError(
+                f"chưa đăng ký source có checksum {ctx.source_checksum[:12]}"
+            )
 
         stored = ctx.storage.root / source.storage_path
         if not stored.exists():
-            raise FileNotFoundError(f"file nguồn biến mất khỏi storage: {stored}")
+            raise NonRetryableError(f"file nguồn biến mất khỏi storage: {stored}")
 
         # Idempotent: chạy lại chỉ xác minh, không copy lại (§11.1).
         actual = file_checksum(stored)
         if actual != source.checksum:
-            raise ValueError(
+            raise NonRetryableError(
                 f"checksum lệch — file nguồn đã bị sửa. "
                 f"DB={source.checksum[:12]} file={actual[:12]}"
             )

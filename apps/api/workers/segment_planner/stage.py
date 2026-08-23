@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from core.stage import Stage, StageContext, StageResult
+from core.stage import NonRetryableError, Stage, StageContext, StageResult
 from core.types import StageName
 from db.models import (
     STTSegment,
@@ -42,7 +42,7 @@ class SegmentPlanStage(Stage):
             select(SourceVideo).where(SourceVideo.checksum == ctx.source_checksum)
         ).first()
         if source is None:
-            raise ValueError("chưa chạy stage ingest")
+            raise NonRetryableError("chưa chạy stage ingest")
 
         transcript = ctx.session.scalars(
             select(Transcript)
@@ -51,10 +51,10 @@ class SegmentPlanStage(Stage):
             .limit(1)
         ).first()
         if transcript is None:
-            raise ValueError("chưa có transcript — chạy stage stt trước")
+            raise NonRetryableError("chưa có transcript — chạy stage stt trước")
 
         if not transcript.has_word_timestamps:
-            raise ValueError(
+            raise NonRetryableError(
                 "transcript thiếu word-level timestamp. Duration Fitting (§7) và "
                 "Subtitle (§8) đều phụ thuộc vào nó — đây là bắt buộc, không phải tuỳ chọn"
             )
@@ -65,7 +65,7 @@ class SegmentPlanStage(Stage):
             .order_by(STTSegment.idx)
         ).all()
         if not rows:
-            raise ValueError("transcript không có segment nào")
+            raise NonRetryableError("transcript không có segment nào")
 
         source_preset = load_locale(transcript.locale)
         target_preset = load_locale(ctx.locale)

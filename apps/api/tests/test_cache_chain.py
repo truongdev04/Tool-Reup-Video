@@ -163,3 +163,56 @@ def test_moi_stage_deu_dang_ky(ctx):
     from core.stage import registry
 
     assert set(registry()) >= set(PIPELINE_ORDER)
+
+
+def test_stage_source_scope_cho_hash_giong_nhau_moi_locale(session, storage):
+    """Stage không phụ thuộc locale phải ra CÙNG cache key cho mọi locale.
+
+    Kèm locale vào cache_params của stage SOURCE là vô hiệu hoá cache_scope dù
+    đã khai báo đúng — và sai lầm đó lan xuống toàn bộ chuỗi phía sau. Với video
+    60 phút × 10 locale, đây là chênh lệch giữa chạy STT 1 lần và 10 lần.
+    """
+    from core.hashing import stage_input_hash
+    from core.stage import get_stage
+    from core.types import CacheScope
+
+    project = Project(name="T")
+    session.add(project)
+    session.flush()
+    source = SourceVideo(
+        project_id=project.id, filename="a.mp4", storage_path="a.mp4",
+        checksum="c0ffee", rights_note="test",
+    )
+    session.add(source)
+    session.flush()
+
+    contexts = {}
+    for locale in ("es-ES", "ja-JP"):
+        job = RenderJob(project_id=project.id, source_video_id=source.id, locale=locale)
+        session.add(job)
+        session.flush()
+        contexts[locale] = StageContext(
+            session=session, job_id=job.id, project_id=project.id,
+            source_checksum=source.checksum, locale=locale, storage=storage,
+        )
+
+    def key_for(stage_name, locale):
+        ctx = contexts[locale]
+        stage = get_stage(stage_name)
+        return stage_input_hash(
+            stage=str(stage_name), source_checksum=source.checksum,
+            config_version="0.1.0", provider=stage.provider,
+            provider_version=stage.provider_version,
+            params=stage.cache_params(ctx),
+        )
+
+    source_scoped = [
+        s for s in PIPELINE_ORDER
+        if get_stage(s).cache_scope is CacheScope.SOURCE
+    ]
+    assert source_scoped, "phải có ít nhất vài stage khai báo SOURCE scope"
+
+    for stage_name in source_scoped:
+        assert key_for(stage_name, "es-ES") == key_for(stage_name, "ja-JP"), (
+            f"{stage_name} khai báo SOURCE scope nhưng cache key vẫn đổi theo locale"
+        )

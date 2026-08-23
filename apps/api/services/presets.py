@@ -101,3 +101,11 @@ def load_locale(locale: str) -> LocalePreset:
 
 def available_locales() -> list[str]:
     return sorted(p.stem for p in (PRESET_ROOT / "locale").glob("*.json"))
+
+
+def to_language_code(locale: str | None) -> str | None:
+    """`en-US` -> `en`. Whisper và phần lớn provider nhận mã ISO-639-1, không
+    nhận locale đầy đủ."""
+    if not locale:
+        return None
+    return locale.split("-", 1)[0].split("_", 1)[0].lower() or None

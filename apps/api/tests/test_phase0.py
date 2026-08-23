@@ -121,7 +121,9 @@ def test_ffmpeg_du_kha_nang():
 
 def test_probe_doc_dung_fixture(sample_video):
     info = probe(sample_video)
-    assert info.duration_ms == pytest.approx(10_000, abs=200)
+    # Độ dài do lời nói thật quyết định nên không cố định; chỉ cần đủ ngắn để
+    # vòng lặp phát triển nhanh (§21).
+    assert 4_000 <= info.duration_ms <= 15_000
     assert (info.width, info.height) == (1080, 1920), "fixture phải là 9:16"
     assert info.has_audio, "fixture phải có audio để test STT/TTS"
 

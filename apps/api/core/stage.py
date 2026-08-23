@@ -19,8 +19,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from core.config import Settings, get_settings
-from core.types import StageName
+from core.types import CacheScope, StageName
 from services.storage import Storage
+
+
+class NonRetryableError(Exception):
+    """Lỗi chạy lại bao nhiêu lần cũng vậy: cấu hình sai, thiếu file nguồn,
+    thiếu stage phụ thuộc. Orchestrator thấy lỗi loại này thì dừng ngay thay vì
+    đốt thêm hai lượt retry (§16)."""
 
 
 @dataclass
@@ -59,13 +65,23 @@ class Stage(ABC):
     #: Provider bên ngoài, nếu có — vào cache key (§16).
     provider: str | None = None
     provider_version: str | None = None
+    #: Mặc định JOB cho an toàn: dùng chéo nhầm thì output trỏ sang job khác.
+    #: Stage nào thật sự không phụ thuộc locale mới khai báo SOURCE.
+    cache_scope: CacheScope = CacheScope.JOB
 
     def cache_params(self, ctx: StageContext) -> dict[str, Any]:
         """Tham số ảnh hưởng tới kết quả, đưa vào cache key.
 
-        Mặc định gồm locale. Stage nào phụ thuộc thêm preset thì override —
-        thiếu tham số ở đây khiến cache trả kết quả của cấu hình khác (§16).
+        Stage JOB kèm locale; stage SOURCE thì KHÔNG — kèm vào là mỗi locale ra
+        một hash khác nhau, và cache_scope=SOURCE mất hết tác dụng dù đã khai
+        báo đúng. Sai lầm này lan theo chuỗi: hash của một stage upstream đổi
+        thì mọi stage sau nó cũng trượt cache.
+
+        Stage nào phụ thuộc thêm preset thì override — thiếu tham số ở đây
+        khiến cache trả kết quả của cấu hình khác (§16).
         """
+        if self.cache_scope is CacheScope.SOURCE:
+            return {}
         return {"locale": ctx.locale}
 
     @abstractmethod

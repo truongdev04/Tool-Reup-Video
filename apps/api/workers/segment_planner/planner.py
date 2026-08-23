@@ -144,19 +144,28 @@ def flag_transcreation(
     *,
     hook_window_ms: int = 3000,
     cta_window_ms: int = 4000,
+    max_window_ratio: float = 0.25,
 ) -> list[PlannedUnit]:
     """Đánh dấu hook và CTA cần dịch thoáng thay vì dịch sát (§6.7).
 
     Dịch sát nghĩa thường làm hỏng câu mở đầu và lời kêu gọi hành động — đây là
     hai chỗ quyết định tỉ lệ giữ chân người xem.
+
+    Cửa sổ bị giới hạn theo tỉ lệ độ dài video: cửa sổ cố định 3s/4s sẽ phủ trọn
+    một clip 7 giây và đánh dấu MỌI đơn vị là transcreation, làm mất hẳn ý nghĩa
+    phân biệt. Video càng ngắn thì cửa sổ càng hẹp theo.
     """
     if not units:
         return units
 
     end_of_video = max(u.end_ms for u in units)
+    cap = int(end_of_video * max_window_ratio)
+    hook_edge = min(hook_window_ms, cap)
+    cta_edge = min(cta_window_ms, cap)
+
     for unit in units:
-        is_hook = unit.start_ms < hook_window_ms
-        is_cta = unit.end_ms > end_of_video - cta_window_ms
+        is_hook = unit.start_ms < hook_edge
+        is_cta = unit.end_ms > end_of_video - cta_edge
         unit.needs_transcreation = is_hook or is_cta
     return units
 
