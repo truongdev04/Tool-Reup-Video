@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Media runtime output — docs §12, §17.2
+storage/projects/
+
+# DB & secrets
+*.db
+*.sqlite3
+.env
+
+# Fixture tự sinh lại được bằng make_fixture.py — không commit file 19MB
+apps/api/tests/fixtures/*.mp4

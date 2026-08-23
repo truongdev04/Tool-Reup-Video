@@ -1,0 +1,25 @@
+[project]
+name = "tool-reup-api"
+version = "0.1.0"
+description = "Backend pipeline: video localization & automation"
+# 3.12 chứ không phải 3.13/3.14: PyTorch, Demucs, WhisperX chưa có wheel cho
+# bản mới hơn. Xem docs §13.1 — chốt runtime trước, không để phát hiện ở Phase 1.
+requires-python = ">=3.12,<3.13"
+
+# Dependencies theo stack ở docs §13 — thêm dần khi implement từng module,
+# không cài trước những gì chưa cần.
+dependencies = [
+    "sqlalchemy>=2.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
