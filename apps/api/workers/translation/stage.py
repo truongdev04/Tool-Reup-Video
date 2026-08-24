@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from core.hashing import output_digest
 from core.stage import NonRetryableError, Stage, StageContext, StageResult
 from core.types import StageName
 from db.models import ApiUsage, Translation, TranslationUnit
@@ -170,6 +171,15 @@ class TranslateStage(Stage):
                 "units_total": len(units),
                 "over_budget": over,
                 "target_locale": ctx.locale,
+                # Digest NỘI DUNG bản dịch, không chỉ số lượng (§16) — thiếu
+                # trường này thì dịch lại ra chữ khác nhưng cùng số đơn vị
+                # (vd. sửa thuật ngữ, `rerun_from(translate)`) sẽ KHÔNG đổi
+                # output_digest, khiến downstream (duration_fit/tts/...) cache
+                # hit nhầm bản dịch cũ — đúng kiểu lỗi nghiêm trọng nhất mà
+                # caching.md cảnh báo (xuất video với audio cũ, không ai biết).
+                "texts_digest": output_digest(
+                    {str(idx): text for idx, text in sorted(translations.items())}
+                ),
             },
             usage={
                 "tokens_in": total_in,

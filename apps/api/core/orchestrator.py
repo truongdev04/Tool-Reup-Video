@@ -327,6 +327,10 @@ class Orchestrator:
                 else JobStatus.SUCCEEDED
             )
             job.progress = 1.0
+            # Xoá lỗi của lần chạy TRƯỚC — không thì job fail rồi chạy lại
+            # thành công vẫn hiện error_message cũ (dashboard §19 hiện thẳng
+            # trường này, phát hiện khi soát dữ liệu thật qua API).
+            job.error_message = None
 
         self.ctx.session.flush()
         return report

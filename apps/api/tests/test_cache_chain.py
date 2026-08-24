@@ -176,6 +176,36 @@ def test_stage_loi_duoc_retry_va_ghi_error_log(ctx):
     assert ctx.session.query(ErrorLog).count() == 2
 
 
+def test_job_thanh_cong_sau_khi_fail_thi_xoa_error_message_cu(ctx):
+    """Dashboard (§19) hiện thẳng `job.error_message` — job fail rồi chạy lại
+    thành công mà vẫn còn lỗi cũ là báo sai cho người vận hành."""
+
+    class _AlwaysFail(Stage):
+        name = StageName.STT
+
+        def run(self, c, i):
+            raise RuntimeError("lỗi tạm thời")
+
+    register(_AlwaysFail())
+    Orchestrator(ctx, max_retries=0).run_pipeline(stages=(StageName.STT,))
+
+    job = ctx.session.get(RenderJob, ctx.job_id)
+    assert job.status is JobStatus.FAILED
+    assert job.error_message
+
+    class _NowOk(Stage):
+        name = StageName.STT
+
+        def run(self, c, i):
+            return StageResult(output_ref={"ok": True})
+
+    register(_NowOk())
+    Orchestrator(ctx, max_retries=0).run_pipeline(stages=(StageName.STT,))
+
+    assert job.status is JobStatus.SUCCEEDED
+    assert job.error_message is None, "lỗi của lần chạy trước phải bị xoá khi lần này thành công"
+
+
 def test_moi_stage_deu_dang_ky(ctx):
     from core.stage import registry
 

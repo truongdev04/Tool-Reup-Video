@@ -4,83 +4,86 @@
 
 ## 1. Mục tiêu
 
-Theo đúng roadmap §20: Phase 0–2 xong hoàn toàn. Phase 3 ("Redis queue,
-worker tách tiến trình, retry, cache, partial re-run, approval gates, QC tự
-động") nay cũng đã xong hoàn toàn — retry/cache/partial-re-run/QC tự động có
-từ Phase 0–2, approval gates + voice consent và hạ tầng Celery/Redis làm
-xong phiên này.
+Theo roadmap §20: Phase 0–3 xong hoàn toàn. Phase 4 (Dashboard) — "vòng vận
+hành lõi" (Projects, Video Workspace, Batch Queue, QC Review) đã xong và xác
+nhận chạy thật qua trình duyệt phiên này. Còn lại của Phase 4: Publishing
+Calendar (chờ Phase 5), Settings.
 
 ## 2. Những phần đã hoàn thành
 
-**Phase 0–2 — đã xong, đã commit+push.** Chi tiết:
-[.claude/rules/diarization.md](../rules/diarization.md),
-[.claude/rules/providers.md](../rules/providers.md),
-[.claude/rules/fonts.md](../rules/fonts.md),
-[.claude/rules/compose.md](../rules/compose.md).
+**Phase 0–3 — đã xong, đã commit+push.** Chi tiết:
+[.claude/rules/compose.md](../rules/compose.md),
+[.claude/rules/approval-gates.md](../rules/approval-gates.md),
+[.claude/rules/infra.md](../rules/infra.md).
 
-**Approval gates + voice consent (§11.2, §18.2) — đã commit+push**, có CLI
-vận hành (`scripts/manage_gates.py`). Chi tiết:
-[.claude/rules/approval-gates.md](../rules/approval-gates.md).
+**Dashboard Phase 4 — vòng vận hành lõi (§19) — MỚI phiên này, CHƯA
+commit/push.** Chi tiết đầy đủ: [.claude/rules/dashboard.md](../rules/dashboard.md).
 
-**Hạ tầng Celery/Redis (§20 Phase 3) — MỚI phiên này, CHƯA commit/push.**
-Chi tiết đầy đủ: [.claude/rules/infra.md](../rules/infra.md).
-
-- `core/celery_app.py` (app Celery, broker/backend = Redis local qua
-  `Settings.redis_url`), `core/tasks.py` (`run_for_video_task`/
-  `resume_job_task` — chỉ gọi lại hàm thuần đã có trong `pipeline_runner.py`,
-  serialize `PipelineReport` thành dict JSON trước khi trả).
-- `scripts/worker.py` (khởi động worker), `scripts/run_pipeline.py
-  --via-celery` (gửi task qua Redis thay vì gọi trực tiếp).
-- `pyproject.toml` (+`celery`, `redis`), `core/config.py`
-  (+`Settings.redis_url`), Redis cài qua `brew install redis` trên máy này.
-- 3 test mới (`test_celery_tasks.py`, dùng `Task.apply()` — không cần
-  redis-server thật để chạy test).
-- **Đã xác nhận bằng pipeline THẬT qua Redis + worker process riêng, không
-  chỉ unit test** — và bắt được 1 lỗi hạ tầng nghiêm trọng khi làm vậy:
-  - Lần chạy đầu dùng pool mặc định `prefork` (fork tiến trình con) →
-    `stt` (mlx-whisper, Metal GPU) FAIL 100% với lỗi
-    `[metal::Device] ... Unable to reach MTLCompilerService` — Metal không
-    sống sót qua `fork()`. Sửa: `scripts/worker.py` mặc định `--pool=solo`.
-  - Lần chạy lại với `--pool=solo`: `ingest`/`analyze`/`separate` cache-hit
-    đúng (job đã tồn tại từ lần trước), `stt` chạy thật thành công, toàn bộ
-    pipeline hoàn tất `ok: True` trong ~24s.
-  - Phát hiện thêm (đã ghi vào infra.md, KHÔNG phải bug — là đặc tính vốn có
-    của việc tách tiến trình): biến môi trường (`VLA_DEV_FAST` v.v.) set cho
-    tiến trình CLI KHÔNG tự động tới tiến trình worker — phải set trước khi
-    khởi động `scripts/worker.py`.
-- Tiện sửa 1 lỗ hổng có sẵn từ Phase 0: `RenderJob.presets` tồn tại nhưng
-  chưa từng được ghi ở đâu — `resume_job()` cần đọc lại đúng provider đã
-  dùng ở lần chạy gốc, nên `run_for_video()` giờ ghi `job.presets = presets`
-  mỗi lần gọi.
+- Backend: `apps/api/api/routes/dashboard.py` (mới) — Projects (list/detail),
+  Batch Queue (list job mọi project, lọc theo trạng thái), Video Workspace
+  (chi tiết 1 job: unit/translation/drift/QC/gates), sửa inline translation
+  (PATCH + rerun-downstream), approve gate, resume job. CORS bật trong
+  `api/main.py` cho `localhost:3000`.
+- Service mới: `services/translation_edit.py` — sửa bản dịch KHÔNG gọi lại
+  LLM, tự bump cache `TRANSLATE` (cùng `input_hash`, `output_ref` đổi theo
+  nội dung) để downstream (`duration_fit`→`tts`→...→`qc`) chạy lại đúng mà
+  TRANSLATE vẫn cache-hit. `services/pipeline_runner.py::rerun_stages_for_job`
+  (mới, refactor từ `resume_job`) — chạy một tập stage chỉ định cho job có sẵn.
+- **Bug bắt được khi soát cơ chế cache cho tính năng này**:
+  `TranslateStage.output_ref` trước đây chỉ chứa SỐ LƯỢNG, không chứa NỘI
+  DUNG bản dịch — dịch lại ra chữ khác nhưng cùng số lượng thì
+  `output_digest` không đổi, downstream cache hit nhầm bản dịch CŨ. Đã sửa
+  (`texts_digest`), có regression test (`test_translate_stage.py`).
+- Bug nhỏ khác bắt được khi soát dữ liệu thật qua API:
+  `RenderJob.error_message` không được xoá khi job thành công sau lần fail
+  trước — dashboard hiện lỗi cũ mãi dù đã chạy lại OK. Đã sửa trong
+  `core/orchestrator.py`, có test.
+- Frontend: `apps/web/` — Next.js 16 (App Router, TypeScript, Tailwind v4),
+  toàn Client Component gọi thẳng backend qua `src/lib/api.ts`. 4 trang:
+  Projects (`/`), Project detail (`/projects/[id]`), Batch Queue (`/queue`),
+  Video Workspace (`/jobs/[id]` — transcript/dịch có sửa inline qua
+  `UnitEditor` + preview "sẽ chạy lại gì" trước khi lưu, `DriftTimeline` SVG
+  theo đúng yêu cầu §19, `GatesPanel` duyệt/chạy tiếp cổng, QC findings, video
+  player).
+- **Đã xác nhận bằng trình duyệt thật (chrome-devtools), không chỉ
+  build/lint pass**: mở cả 4 trang với dữ liệu thật từ job Celery smoke test
+  trước đó; bấm "Sửa" một câu dịch → lưu → thấy đúng preview stage sẽ chạy
+  lại → sau khi lưu, downstream chạy lại thật (log uvicorn xác nhận PATCH +
+  POST rerun-downstream 200 OK), UI tự refetch và hiện đúng: bản dịch mới,
+  drift timeline chuyển đỏ (bản dịch dài hơn làm audio trôi >300ms), QC
+  chuyển FAIL đúng chỗ, video re-render (frame khác). Không có console error.
+- `apps/web/CLAUDE.md`/`AGENTS.md` (tự sinh bởi `next dev`, KHÔNG xoá — file
+  cảnh báo Next.js 16 có breaking changes so với training data, đã đọc
+  `node_modules/next/dist/docs/` trước khi code theo đúng hướng dẫn đó).
 
 ## 3. Trạng thái hiện tại
 
-- **215/215 test pass** (`apps/api/tests`).
+- **221/221 test Python pass** (`apps/api/tests`). Frontend: `npx tsc
+  --noEmit` sạch, `npm run lint` sạch, `npm run build` thành công.
 - **Lỗi đã biết, KHÔNG phải mới**: QC `background_retained` FAIL trên
   es-ES — hạn chế của fixture tổng hợp (sine wave), không phải bug render.
-- **Chưa commit/push**: toàn bộ code hạ tầng Celery/Redis phiên này (core/
-  celery_app.py, core/tasks.py, scripts/worker.py, sửa scripts/run_pipeline.py,
-  pyproject.toml, core/config.py, test_celery_tasks.py, rule docs liên quan)
-  — đã `git add`? CHƯA, đang chờ xác nhận.
-- Redis đang chạy nền trên máy này (khởi động thủ công lúc dev, KHÔNG qua
-  `brew services start` nên sẽ không tự chạy lại sau khi máy khởi động lại —
-  người dùng cần tự chạy `brew services start redis` nếu muốn nó persistent).
-- **Chưa kích hoạt được trên pipeline thật**: diarize + multi-voice TTS thật
-  (chưa có `HF_TOKEN`); voice consent chưa test với giọng thật (chỉ test với
-  provider giả).
+- **Chưa commit/push**: toàn bộ code dashboard phiên này (backend
+  `dashboard.py`, `translation_edit.py`, sửa `pipeline_runner.py`/
+  `orchestrator.py`/`main.py`, test mới, và cả thư mục `apps/web/`) — chưa
+  `git add`.
+- **Chưa làm**: Publishing Calendar (chờ Phase 5 có gì để hiện), Settings
+  (provider API key/concurrency/retention), auth cho cả CLI lẫn dashboard,
+  tự động refresh Batch Queue khi Celery đổi trạng thái nền.
 - Nợ kỹ thuật khác (chi tiết: [.claude/rules/tech-debt.md](../rules/tech-debt.md)):
   `forced_align` xấp xỉ tuyến tính; `speech_rate_cps` chưa hiệu chuẩn cho
   `elevenlabs`/`openai_tts`; `render` chưa áp `FitStrategy.VIDEO_STRETCH`;
   chưa có render preset (§14); `speaker_voices` chưa có cho `elevenlabs`;
-  dry-run cost estimate (§17.1) chưa có; `onscreen_text` vẫn stub; worker
-  Celery chưa test chạy song song nhiều job, chưa có supervisor tự restart.
+  dry-run cost estimate (§17.1) chưa có; `onscreen_text` vẫn stub; diarize +
+  multi-voice TTS thật chưa kích hoạt được (chưa có `HF_TOKEN`).
 
 ## 4. Bước tiếp theo
 
-1. **Xác nhận commit/push hạ tầng Celery/Redis** (đang chờ, chưa `git add`).
-2. Phase 3 (roadmap §20) nay đã xong hoàn toàn. Lựa chọn còn mở cho Phase
-   tiếp theo: **Phase 4** (dashboard Next.js+FastAPI thật — dev viewer hiện
-   tại không phải cái này), **Phase 5** (publish/OAuth từng nền tảng), hoặc
+1. **Xác nhận commit/push toàn bộ dashboard Phase 4** (đang chờ, chưa
+   `git add` — lượng thay đổi lớn, gồm cả `apps/web/` mới).
+2. Phase 0–4 (phần lõi) đã xong theo roadmap §20. Lựa chọn kế tiếp: hoàn
+   thiện nốt Phase 4 (Settings — không phụ thuộc gì khác, làm được ngay;
+   Publishing Calendar phải chờ Phase 5), hoặc bắt đầu **Phase 5** (`publish`,
+   OAuth từng nền tảng — xem ràng buộc quota §18.3 trước khi thiết kế), hoặc
    việc nhỏ nâng chất lượng còn tồn (dry-run cost §17.1, hiệu chuẩn
    `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render preset).
 3. Nếu người dùng lấy được `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`,

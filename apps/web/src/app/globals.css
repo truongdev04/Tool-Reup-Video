@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Màu nền/chữ đặt trực tiếp bằng Tailwind class trên <body> (layout.tsx) —
+   không đặt lại ở đây để tránh CSS thường (ngoài @layer) đè mất class. */
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}

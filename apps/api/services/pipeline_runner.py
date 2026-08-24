@@ -11,7 +11,7 @@ from pathlib import Path
 
 from core.orchestrator import Orchestrator, PipelineReport
 from core.stage import StageContext
-from core.types import StageName
+from core.types import PIPELINE_ORDER, StageName
 from db.base import create_all, session_scope
 from db.models import Project, RenderJob, SourceVideo
 from services.approval_gates import ensure_gates
@@ -104,15 +104,20 @@ def run_for_video(
         )
 
 
-def resume_job(job_id: str) -> PipelineReport:
-    """Tiếp tục MỘT job đang dừng ở NEEDS_REVIEW chờ duyệt approval gate
-    (§11.2) — gọi lại `run_pipeline()` từ đầu PIPELINE_ORDER; mọi stage đã
-    chạy trước cổng cache-hit tức thì (§16), pipeline chỉ thực sự chạy tiếp
-    từ chỗ dừng. Xem `.claude/rules/approval-gates.md`.
+def rerun_stages_for_job(job_id: str, stages: tuple[StageName, ...] = PIPELINE_ORDER) -> PipelineReport:
+    """Chạy `stages` cho một job ĐÃ TỒN TẠI, dùng `job.presets` đã lưu lúc
+    tạo/chạy job lần đầu (`run_for_video`) — KHÔNG phải mặc định của tiến
+    trình gọi, nếu không có thể chạy tiếp bằng provider dịch/TTS khác với lần
+    chạy gốc mà không ai biết.
 
-    Dùng `job.presets` đã lưu lúc tạo/chạy job lần đầu (`run_for_video`) —
-    KHÔNG phải mặc định, nếu không resume có thể chạy tiếp bằng provider
-    dịch/TTS khác với lần chạy gốc mà không ai biết.
+    Mặc định `stages=PIPELINE_ORDER` (chạy toàn bộ, cache tự lo phần đã
+    xong) — dùng khi cần chạy CHỈ MỘT PHẦN mà không muốn orchestrator tự suy
+    ra tập stage cần chạy lại (vd. `services/translation_edit.py` đã tự bump
+    cache của TRANSLATE thủ công sau khi sửa inline một câu dịch — gọi
+    `Orchestrator.rerun_from(TRANSLATE)` ở đây sẽ ép TRANSLATE chạy lại thật,
+    gọi provider dịch lần nữa và GHI ĐÈ mất bản sửa thủ công; truyền thẳng
+    `dependents_of(TRANSLATE)` làm `stages` để bỏ qua TRANSLATE, xem
+    `.claude/rules/approval-gates.md` cho ví dụ tương tự với `resume_job`).
     """
     create_all()
     storage = Storage()
@@ -126,4 +131,12 @@ def resume_job(job_id: str) -> PipelineReport:
             source_checksum=source.checksum, locale=job.locale, storage=storage,
             presets=job.presets or {},
         )
-        return Orchestrator(ctx).run_pipeline()
+        return Orchestrator(ctx).run_pipeline(stages=stages)
+
+
+def resume_job(job_id: str) -> PipelineReport:
+    """Tiếp tục MỘT job đang dừng ở NEEDS_REVIEW chờ duyệt approval gate
+    (§11.2) — mọi stage đã chạy trước cổng cache-hit tức thì (§16), pipeline
+    chỉ thực sự chạy tiếp từ chỗ dừng. Xem `.claude/rules/approval-gates.md`.
+    """
+    return rerun_stages_for_job(job_id)
