@@ -107,3 +107,13 @@ class FilterGraph:
 def run_ffmpeg(args: list[str], *, timeout: int = 1800) -> None:
     s = get_settings()
     _run([s.ffmpeg_bin, "-hide_banner", "-nostdin", "-y", *args], timeout=timeout)
+
+
+def escape_filter_value(value: Path | str) -> str:
+    """Thoát một giá trị (đường dẫn hay chuỗi style) để chèn an toàn vào filter
+    mini-language của ffmpeg: `:` là dấu phân cách tham số, `\\`/`'` có ý
+    nghĩa escape riêng. Dùng chung cho mọi filter cần escape kiểu này
+    (`subtitles`, `drawtext`, `concat`...) — xem `workers/render/stage.py`,
+    `services/compose_video.py`."""
+    s = str(value)
+    return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")

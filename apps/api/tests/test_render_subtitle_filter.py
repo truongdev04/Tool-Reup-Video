@@ -1,10 +1,13 @@
-"""Filter `subtitles` của stage `render` kèm font fallback — docs §13.2, §14.
+"""Filter `subtitles` + bù offset intro/outro của stage `render` — docs §13.2,
+§14, §6.14, §9.
 
-Chỉ test hàm dựng chuỗi filter (`_subtitles_filter_expr`), không chạy ffmpeg
-thật — đã xác nhận filter này chạy được với ffmpeg thật bằng
-`scripts/run_pipeline.py` thủ công trong phiên implement (không lặp lại ở
-CI vì tốn thời gian mã hoá video không cần thiết cho việc test cú pháp).
-"""
+Test hàm dựng chuỗi filter (`_subtitles_filter_expr`, `_audio_sync_filter`,
+`_shifted_srt_path`), không chạy ffmpeg thật cho phần filter/audio-sync — đã
+xác nhận toàn bộ chuỗi này (kể cả `adelay`/`apad`/SAR) chạy đúng với ffmpeg
+thật bằng `scripts/run_pipeline.py` thủ công trong phiên implement, kèm kiểm
+tra bằng mắt (trích frame) và đo `volumedetect` xác nhận audio/phụ đề đồng bộ
+đúng sau khi có intro/outro (không lặp lại ở CI vì tốn thời gian mã hoá video
+không cần thiết cho việc test cú pháp/logic dịch offset)."""
 
 from __future__ import annotations
 
@@ -13,7 +16,9 @@ from pathlib import Path
 
 from core.config import Settings
 from core.stage import StageContext
-from workers.render.stage import _subtitles_filter_expr
+from db.models import Project, RenderJob, SourceVideo, SubtitleCue
+from services.branding import IntroOutroDurations
+from workers.render.stage import _audio_sync_filter, _shifted_srt_path, _subtitles_filter_expr
 
 
 def _ctx(storage, *, locale: str, fonts_dir: Path) -> StageContext:
@@ -62,3 +67,55 @@ def test_dung_dung_font_that_da_bundle_cho_tung_locale(storage):
     )
     assert "force_style='FontName=Noto Sans JP'" in _subtitles_filter_expr(ctx_ja, Path("/tmp/x.srt"))
     assert "force_style='FontName=Noto Sans Arabic'" in _subtitles_filter_expr(ctx_ar, Path("/tmp/x.srt"))
+
+
+# ---------------------------------------------------------------------------
+# _audio_sync_filter — bù intro/outro vào audio đã tái dựng (§6.14, §9)
+# ---------------------------------------------------------------------------
+
+
+def test_khong_intro_van_ep_apad_khop_dung_do_dai_video():
+    """Không có intro (intro_ms=0) vẫn phải `apad` khớp đúng độ dài video —
+    tin vào video làm mốc thay vì trông cậy `-shortest` cắt vài chục ms lệch
+    do làm tròn giữa 2 stream (xem docstring `_audio_sync_filter`)."""
+    expr = _audio_sync_filter(IntroOutroDurations(0, 0), video_duration_ms=7000)
+    assert expr == "adelay=0:all=1,apad=whole_dur=7.000"
+
+
+def test_co_intro_dich_dung_so_ms():
+    expr = _audio_sync_filter(IntroOutroDurations(intro_ms=1500, outro_ms=1500), video_duration_ms=10000)
+    assert expr == "adelay=1500:all=1,apad=whole_dur=10.000"
+
+
+# ---------------------------------------------------------------------------
+# _shifted_srt_path — dịch cue theo intro_ms (§6.14, §8.3)
+# ---------------------------------------------------------------------------
+
+
+def test_shifted_srt_dich_dung_moi_cue_theo_intro_ms(session, storage, tmp_path):
+    project = Project(name="T")
+    session.add(project)
+    session.flush()
+    source = SourceVideo(
+        project_id=project.id, filename="a.mp4", storage_path="a.mp4",
+        checksum="c0ffee", rights_note="test",
+    )
+    session.add(source)
+    session.flush()
+    job = RenderJob(project_id=project.id, source_video_id=source.id, locale="en-US")
+    session.add(job)
+    session.flush()
+    session.add(SubtitleCue(render_job_id=job.id, idx=0, start_ms=0, end_ms=900, lines=["hello"], cps=10.0))
+    session.add(SubtitleCue(render_job_id=job.id, idx=1, start_ms=900, end_ms=1800, lines=["world"], cps=10.0))
+    session.flush()
+
+    ctx = StageContext(
+        session=session, job_id=job.id, project_id=project.id,
+        source_checksum=source.checksum, locale="en-US", storage=storage,
+    )
+
+    out = _shifted_srt_path(ctx, intro_ms=1500, out_dir=tmp_path)
+    content = out.read_text(encoding="utf-8")
+
+    assert "00:00:01,500 --> 00:00:02,400" in content, "cue đầu (0-900ms gốc) phải dịch tới sau 1500ms"
+    assert "00:00:02,400 --> 00:00:03,300" in content, "cue sau (900-1800ms gốc) phải dịch cùng offset"

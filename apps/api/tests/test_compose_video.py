@@ -1,6 +1,6 @@
-"""Áp logo lên video — docs §6.14. Gọi ffmpeg thật, xác minh bằng cách lấy mẫu
-pixel thay vì chỉ kiểm tra file không lỗi — nhất quán với phong cách
-test_qc_media.py/test_audio_mix.py của dự án."""
+"""Áp logo/CTA/intro-outro lên video — docs §6.14. Gọi ffmpeg thật, xác minh
+bằng cách lấy mẫu pixel/âm lượng thay vì chỉ kiểm tra file không lỗi — nhất
+quán với phong cách test_qc_media.py/test_audio_mix.py của dự án."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from core.config import get_settings
-from services.compose_video import overlay_logo
+from services.compose_video import concat_clips, overlay_cta, overlay_logo, prepare_clip_for_concat
 from services.ffmpeg import probe, run_ffmpeg
 
 
@@ -114,3 +114,83 @@ def test_vi_tri_khong_hop_le_bao_loi_ro_rang(tmp_path, blue_video, red_logo):
 
     with pytest.raises(ValueError, match="vị trí logo"):
         overlay_logo(blue_video, logo_png, tmp_path / "x.mp4", position="middle-ish")
+
+
+# ---------------------------------------------------------------------------
+# prepare_clip_for_concat / concat_clips — §6.14 intro/outro
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_clip_chuan_hoa_dung_resolution_fps_sar(tmp_path):
+    """Input khác hẳn resolution/fps nguồn (640x480@30) — output phải khớp
+    ĐÚNG resolution/fps target (320x240@25) và SAR=1:1, không thì `concat`
+    sẽ từ chối nối (đã gặp lỗi SAR lệch 18221:18225 khi test bằng pipeline
+    thật, xem .claude/rules/compose.md)."""
+    src = _make_clip(tmp_path / "src.mp4", "red", size="640x480", duration=1.0)
+    out = prepare_clip_for_concat(src, tmp_path / "prepared.mp4", width=320, height=240, fps=25)
+
+    info = probe(out)
+    assert (info.width, info.height) == (320, 240)
+    assert info.fps == 25
+    assert info.aspect_ratio in ("4:3", "320:240"), f"SAR/DAR bất thường: {info.raw}"
+
+
+def test_noi_hai_clip_dung_thu_tu_va_tong_thoi_luong(tmp_path):
+    a = _make_clip(tmp_path / "a.mp4", "red", size="320x240", duration=1.0)
+    b = _make_clip(tmp_path / "b.mp4", "blue", size="320x240", duration=2.0)
+    a_prepared = prepare_clip_for_concat(a, tmp_path / "a_p.mp4", width=320, height=240, fps=25)
+
+    out = tmp_path / "joined.mp4"
+    concat_clips([a_prepared, b], out)
+
+    assert probe(out).duration_ms == pytest.approx(3000, abs=100)
+    assert _is_red(_sample_pixel(out, 160, 120)), "0.5s đầu (trong clip A) phải màu đỏ"
+    run_ffmpeg(["-y", "-ss", "1.8", "-i", str(out), "-frames:v", "1", str(tmp_path / "mid.png")])
+    assert _is_blue(_sample_pixel(tmp_path / "mid.png", 160, 120)), "sau 1s (trong clip B) phải màu xanh"
+
+
+def test_noi_duoi_2_clip_bao_loi_ro_rang(tmp_path, blue_video):
+    with pytest.raises(ValueError, match="ít nhất 2 clip"):
+        concat_clips([blue_video], tmp_path / "x.mp4")
+
+
+# ---------------------------------------------------------------------------
+# overlay_cta — §6.14 CTA
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cta_fontfile() -> Path:
+    return get_settings().fonts_dir / "NotoSans-Regular.ttf"
+
+
+def test_cta_chi_hien_trong_dung_khung_thoi_gian(tmp_path, cta_fontfile):
+    src = _make_clip(tmp_path / "src.mp4", "blue", size="320x240", duration=3.0)
+    out = tmp_path / "with_cta.mp4"
+    overlay_cta(
+        src, out, text="Theo dõi để xem thêm!", fontfile=cta_fontfile,
+        start_ms=1000, duration_ms=1000, position="bottom_center",
+    )
+
+    # Box vẽ toàn bộ bề rộng dòng chữ — lấy mẫu NGOÀI vùng chữ (góc trên) để
+    # chỉ đo hộp nền đen, không lẫn glyph trắng.
+    before = _sample_pixel(_frame_at(out, 0.3, tmp_path / "f0.png"), 5, 5)
+    during = _sample_pixel(_frame_at(out, 1.5, tmp_path / "f1.png"), 160, 220)
+    after = _sample_pixel(_frame_at(out, 2.5, tmp_path / "f2.png"), 5, 5)
+
+    assert _is_blue(before), "trước khung thời gian phải chưa có CTA (chỉ nền xanh)"
+    assert _is_blue(after), "sau khung thời gian CTA phải biến mất"
+    assert not _is_blue(during), "trong khung thời gian phải có hộp CTA đè lên nền xanh"
+
+
+def test_cta_vi_tri_khong_hop_le_bao_loi_ro_rang(tmp_path, cta_fontfile, blue_video):
+    with pytest.raises(ValueError, match="vị trí CTA"):
+        overlay_cta(
+            blue_video, tmp_path / "x.mp4", text="x", fontfile=cta_fontfile,
+            start_ms=0, duration_ms=100, position="middle-ish",
+        )
+
+
+def _frame_at(video_path: Path, t: float, out_png: Path) -> Path:
+    run_ffmpeg(["-y", "-ss", str(t), "-i", str(video_path), "-frames:v", "1", str(out_png)])
+    return out_png

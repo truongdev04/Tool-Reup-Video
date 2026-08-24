@@ -27,6 +27,7 @@ from db.models import (
     TranslationUnit,
 )
 from services.audio_mix import TARGET_I, measure_loudnorm
+from services.branding import resolve_intro_outro_durations
 from services.ffmpeg import probe
 from services.fonts import resolve as resolve_fonts
 from services.presets import load_locale
@@ -88,7 +89,13 @@ class QCStage(Stage):
 
         final_path = ctx.storage.root / final.storage_path
         info = probe(final_path)
-        expected_duration = (source.media_info or {}).get("duration_ms", info.duration_ms)
+        # compose có thể đã nối intro/outro (§6.14) — output DÀI HƠN source
+        # đúng bằng độ dài đó là hợp lệ, không phải lỗi cắt/hỏng video (đây là
+        # cùng con số render đã dùng để bù audio, xem services/branding.py).
+        durations = resolve_intro_outro_durations(ctx)
+        expected_duration = (
+            (source.media_info or {}).get("duration_ms", info.duration_ms) + durations.total_ms
+        )
         preset = load_locale(ctx.locale)
         settings = ctx.settings
 
@@ -131,7 +138,13 @@ class QCStage(Stage):
 
         gap = self._find_silence_gap(units)
         if gap is not None:
-            gap_db = mean_volume_db(final_path, start_ms=gap[0], end_ms=gap[1])
+            # gap tính theo timeline nội dung chính — lấy mẫu trên final_path
+            # (đã có intro nếu compose nối) phải dịch cùng offset với audio/
+            # phụ đề render đã áp, không thì đo nhầm đoạn hoàn toàn khác.
+            gap_db = mean_volume_db(
+                final_path,
+                start_ms=gap[0] + durations.intro_ms, end_ms=gap[1] + durations.intro_ms,
+            )
             findings.append(check_background_retained(gap_db))
 
         black = detect_black_segments(final_path, min_duration_s=1.0)

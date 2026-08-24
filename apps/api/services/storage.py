@@ -59,6 +59,23 @@ class Storage:
     def project_dir(self, project_id: str) -> Path:
         return self.root / "projects" / project_id
 
+    def shared_dir(self, name: str) -> Path:
+        """Thư mục dùng chung giữa MỌI project — không nằm dưới `projects/`.
+
+        Dùng cho asset không thuộc về một video/project cụ thể nào, ví dụ
+        brand placeholder tự sinh khi `Project.brand_profile_id` chưa được
+        set (`workers/compose/stage.py`). Trước đây asset đó bị ghi nhầm vào
+        `path_for(..., project_id=ctx.project_id)` dù `BrandProfile` placeholder
+        được TÁI DÙNG chung cho mọi project (tra theo tên, không theo
+        project) — project B vô tình đọc file vật lý nằm trong thư mục
+        project A. `RETENTION_DAYS` (§17.2) không áp cho thư mục này vì nó
+        nằm ngoài hệ `ArtifactKind` theo từng project — placeholder không có
+        "hết hạn" hợp lý.
+        """
+        base = self.root / "shared" / name
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+
     def job_dir(self, project_id: str, job_id: str) -> Path:
         return self.project_dir(project_id) / "jobs" / job_id
 

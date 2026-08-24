@@ -17,25 +17,33 @@ from sqlalchemy import select
 from core.hashing import file_checksum
 from core.stage import NonRetryableError, Stage, StageContext, StageResult
 from core.types import ArtifactKind, StageName
-from db.models import OutputFile, SourceVideo
+from db.models import OutputFile, SourceVideo, SubtitleCue
 from services.audio_mix import loudnorm_two_pass, mix_voice_and_background
-from services.ffmpeg import FilterGraph, probe, run_ffmpeg
+from services.branding import IntroOutroDurations, resolve_intro_outro_durations
+from services.ffmpeg import FilterGraph, escape_filter_value, probe, run_ffmpeg
 from services.fonts import resolve as resolve_fonts
 from services.presets import load_locale
+from workers.subtitle.splitter import Cue
+from workers.subtitle.writer import write_srt
 
 #: Bitrate cố định cho MVP — chưa có render preset (§14) để chọn theo aspect
 #: ratio/resolution. Ghi nhận như nợ kỹ thuật, hợp lý để làm ở Phase 2.
 _VIDEO_BITRATE = "6000k"
 
 
-def _escape_for_subtitles_filter(value: Path | str) -> str:
-    """ffmpeg filter `subtitles=` coi `:` là ký tự phân cách tham số và `\\`,
-    `'` có ý nghĩa escape riêng — phải thoát trước khi chèn vào filter graph.
-    Dùng chung cho cả đường dẫn (`filename`, `fontsdir`) lẫn giá trị style
-    (`force_style`)."""
-    s = str(value)
-    s = s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    return s
+def _shifted_srt_path(ctx: StageContext, intro_ms: int, out_dir: Path) -> Path:
+    """SRT gốc tính theo timeline NỘI DUNG CHÍNH (§8.3) — nếu `compose` đã nối
+    intro vào trước video, mọi cue phải dịch tới sau `intro_ms` mới khớp vị
+    trí thật trong video cuối, không thì phụ đề hiện đè lên đoạn intro thay
+    vì đợi tới khi lời thoại thật sự bắt đầu (đã gặp lỗi này khi test thật)."""
+    cues = ctx.session.scalars(
+        select(SubtitleCue).where(SubtitleCue.render_job_id == ctx.job_id).order_by(SubtitleCue.idx)
+    ).all()
+    shifted = [
+        Cue(start_ms=c.start_ms + intro_ms, end_ms=c.end_ms + intro_ms, lines=c.lines, cps=c.cps or 0.0)
+        for c in cues
+    ]
+    return write_srt(shifted, out_dir / f"{ctx.locale}_shifted.srt")
 
 
 def _subtitles_filter_expr(ctx: StageContext, srt_path: Path) -> str:
@@ -47,12 +55,23 @@ def _subtitles_filter_expr(ctx: StageContext, srt_path: Path) -> str:
     preset = load_locale(ctx.locale)
     fonts = resolve_fonts(preset.font_stack, ctx.settings.fonts_dir)
 
-    expr = f"subtitles='{_escape_for_subtitles_filter(srt_path)}'"
+    expr = f"subtitles='{escape_filter_value(srt_path)}'"
     if fonts.available:
-        expr += f":fontsdir='{_escape_for_subtitles_filter(fonts.fonts_dir)}'"
+        expr += f":fontsdir='{escape_filter_value(fonts.fonts_dir)}'"
     if fonts.primary_family:
-        expr += f":force_style='{_escape_for_subtitles_filter(f'FontName={fonts.primary_family}')}'"
+        expr += f":force_style='{escape_filter_value(f'FontName={fonts.primary_family}')}'"
     return expr
+
+
+def _audio_sync_filter(durations: IntroOutroDurations, video_duration_ms: int) -> str:
+    """Bù intro/outro (§6.14) vào audio đã tái dựng (§9): dịch audio tới sau
+    `intro_ms` (`adelay`) rồi đệm lặng cho khớp ĐÚNG độ dài video cuối
+    (`apad=whole_dur`) — video giờ là mốc thời lượng đúng (đã có intro/outro),
+    audio phải khớp theo, không phải ngược lại. Không có intro/outro thì
+    `intro_ms=0` và `apad` gần như vô hại (đảm bảo khớp khít thay vì trông
+    cậy `-shortest` cắt vài chục ms lệch do làm tròn)."""
+    video_duration_s = video_duration_ms / 1000
+    return f"adelay={durations.intro_ms}:all=1,apad=whole_dur={video_duration_s:.3f}"
 
 
 class RenderStage(Stage):
@@ -104,8 +123,21 @@ class RenderStage(Stage):
         mix_voice_and_background(voice_path, background, mixed_path)
         loudnorm_two_pass(mixed_path, normalized_path)
 
+        # `compose` có thể đã nối intro/outro vào `video_path` (§6.14) — audio
+        # và phụ đề đều dựng theo timeline NỘI DUNG CHÍNH, không biết gì về
+        # phần đã nối thêm đó, nên phải tự bù ở đây (services/branding.py).
+        durations = resolve_intro_outro_durations(ctx)
+        video_duration_ms = probe(video_path).duration_ms
+
+        active_srt_path = srt_path
+        if durations.intro_ms:
+            out_dir = ctx.storage.path_for(
+                ArtifactKind.FINAL, project_id=ctx.project_id, job_id=ctx.job_id
+            )
+            active_srt_path = _shifted_srt_path(ctx, durations.intro_ms, out_dir)
+
         graph = FilterGraph()
-        graph.add(["0:v"], _subtitles_filter_expr(ctx, srt_path), ["vout"])
+        graph.add(["0:v"], _subtitles_filter_expr(ctx, active_srt_path), ["vout"])
 
         out_path = ctx.storage.path_for(
             ArtifactKind.FINAL, project_id=ctx.project_id, job_id=ctx.job_id,
@@ -114,6 +146,7 @@ class RenderStage(Stage):
         run_ffmpeg([
             "-i", str(video_path), "-i", str(normalized_path),
             "-filter_complex", graph.build(),
+            "-af", _audio_sync_filter(durations, video_duration_ms),
             "-map", "[vout]", "-map", "1:a",
             "-c:v", "h264_videotoolbox", "-b:v", _VIDEO_BITRATE, "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
