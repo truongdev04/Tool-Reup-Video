@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     #: Khoảng lặng tối thiểu phải chừa lại khi "ăn" vào silence (docs §7.2).
     min_silence_keep_ms: int = 150
 
+    #: Model diarization trên HuggingFace Hub (docs §6.5). Đây là model GATED —
+    #: phải bấm "Agree" trên trang model (và trang `pyannote/segmentation-3.0`
+    #: nó phụ thuộc) rồi mới xin access token dùng được, xem
+    #: `services/diarization_pyannote.py`.
+    diarization_model: str = "pyannote/speaker-diarization-3.1"
+    #: None = để pyannote tự đoán số người nói.
+    diarization_min_speakers: int | None = None
+    diarization_max_speakers: int | None = None
+
     @field_validator("storage_root")
     @classmethod
     def _resolve(cls, v: Path) -> Path:
