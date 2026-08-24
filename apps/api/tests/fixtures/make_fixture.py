@@ -10,6 +10,15 @@ Cấu trúc cố ý:
   - Có nhạc nền                             -> test tách/tái dựng (§9)
 
 Không phụ thuộc file tải về nên kết quả tái lập được y hệt.
+
+LƯU Ý cho stage `qc` (check_background_retained, §15): nhạc nền ở đây là một
+sine wave đơn tần, không phải nhạc thật. Demucs được huấn luyện để tách nhạc
+THẬT (trống/bass/giai điệu) nên tách rất kém một tín hiệu tổng hợp thế này —
+đo được background.wav sau Demucs còn khoảng -60dB dù nguồn là -22dB. QC vì
+vậy sẽ hợp lý khi báo FAIL ở check này trên fixture — đó là hạn chế của
+fixture tổng hợp, không phải bug ở render/audio_mix (đã xác minh: mọi check
+khác đều PASS, kể cả loudness và checksum). Trên video thật có nhạc nền thật,
+Demucs tách tốt hơn nhiều.
 """
 
 from __future__ import annotations

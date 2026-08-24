@@ -1,7 +1,7 @@
 """Đăng ký toàn bộ 18 stage vào registry.
 
 Đã implement thật: ingest, analyze, separate, stt, segment_plan, translate,
-duration_fit, tts, forced_align, timeline_assembly, subtitle, render.
+duration_fit, tts, forced_align, timeline_assembly, subtitle, render, qc.
 Các stage còn lại là NotImplementedStage giữ đúng contract — harness chạy hết
 pipeline mà không sập, và mỗi stub ghi rõ nó thuộc phase nào theo lộ trình §20.
 
@@ -20,6 +20,7 @@ from workers.audio.stage import SeparateStage
 from workers.duration_fit.stage import DurationFitStage
 from workers.forced_align.stage import ForcedAlignStage
 from workers.ingest.stage import IngestStage
+from workers.qc.stage import QCStage
 from workers.render.stage import RenderStage
 from workers.segment_planner.stage import SegmentPlanStage
 from workers.stt.stage import STTStage
@@ -34,7 +35,6 @@ _PLANNED_PHASE: dict[StageName, str] = {
     StageName.ONSCREEN_TEXT: "Phase 6",
     StageName.LIPSYNC: "Phase 6",
     StageName.COMPOSE: "Phase 2",
-    StageName.QC: "Phase 3",
     StageName.PUBLISH: "Phase 5",
 }
 
@@ -52,6 +52,7 @@ def register_all() -> None:
     register(TimelineAssemblyStage())
     register(SubtitleStage())
     register(RenderStage())
+    register(QCStage())
     for name, phase in _PLANNED_PHASE.items():
         register(NotImplementedStage(name, phase))
 

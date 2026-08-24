@@ -45,7 +45,7 @@ def mix_voice_and_background(
     return out_path
 
 
-def _measure_loudnorm(path: Path) -> dict:
+def measure_loudnorm(path: Path) -> dict:
     """Lượt 1: đo loudness thật của file — dùng cho lượt 2 (§9).
 
     Một lượt loudnorm cho kết quả không ổn định giữa các file; đo trước rồi áp
@@ -70,7 +70,7 @@ def _measure_loudnorm(path: Path) -> dict:
 def loudnorm_two_pass(path: Path, out_path: Path) -> Path:
     """Chuẩn hoá về TARGET_I LUFS bằng loudnorm hai lượt (§9)."""
     settings = get_settings()
-    measured = _measure_loudnorm(path)
+    measured = measure_loudnorm(path)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(

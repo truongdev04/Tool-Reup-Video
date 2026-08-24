@@ -76,10 +76,10 @@ queue, QC review, publishing calendar...). Code nằm ở `apps/api/api/`.
 
 ## Trạng thái
 
-Pipeline chạy thật **từ ingest tới render** — xuất được video cuối cùng có
-giọng lồng tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên. Clip mẫu 7s,
-2 locale: **~22s** lần đầu, **~0,05s** khi dùng cache (ngân sách DoD §21 là
-2 phút).
+Pipeline chạy thật **từ ingest tới qc** — xuất video cuối cùng có giọng lồng
+tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên, và có bộ kiểm tra tự động
+trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** lần đầu,
+**~0,05s** khi dùng cache (ngân sách DoD §21 là 2 phút).
 
 | Stage | Trạng thái | Công nghệ |
 |---|---|---|
@@ -95,11 +95,42 @@ giọng lồng tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên
 | `timeline_assembly` | ✅ | đặt từng chunk vào đúng vị trí tuyệt đối (§9) |
 | `subtitle` | ✅ | cắt cue theo CPS/số dòng, xuất SRT (§6.11) |
 | `render` | ✅ | trộn voice+background, loudnorm 2 lượt, burn hardsub, encode VideoToolbox |
-| `diarize`, `onscreen_text`, `lipsync`, `compose`, `qc`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
+| `qc` | ✅ | 10 check tự động, xem "QC" bên dưới |
+| `diarize`, `onscreen_text`, `lipsync`, `compose`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
 
 Nền tảng Phase 0: 23 bảng data model (§10), stage contract (§11.1),
 orchestrator có cache/retry/partial re-run (§11.3, §16), storage layout (§12),
-harness (§21). **99 test.**
+harness (§21). **136 test.**
+
+## QC — 10 check tự động (§15)
+
+`workers/qc/checks.py` (logic thuần) + `workers/qc/stage.py` (đo đạc thật) +
+`services/qc_media.py` (gọi ffmpeg: `blackdetect`, `volumedetect`).
+
+| Check | Nguồn dữ liệu | Verdict khi lỗi |
+|---|---|---|
+| `drift` | `cumulative_drift_ms` cuối video | FAIL nếu vượt 300ms |
+| `forced_alignment` | mọi cue phải có `from_forced_alignment=True` | FAIL |
+| `cue_overlap` | timestamp cue chồng lấn | FAIL |
+| `cue_cps` | CPS vượt ngưỡng locale | WARN nhẹ, FAIL nếu vượt >1,5x |
+| `tempo_bounds` | tempo ngoài [0,92, 1,08] | FAIL (đáng lẽ fitter đã chặn) |
+| `translation_complete` | thiếu bản dịch cho unit nào | FAIL |
+| `output_playable` | mở được, đúng thời lượng, checksum khớp | FAIL |
+| `loudness` | đo lại bằng `measure_loudnorm`, so với −14 LUFS | WARN/FAIL |
+| `clipping` | true peak | WARN/FAIL |
+| `background_retained` | âm lượng tại khoảng lặng lời thoại | FAIL nếu gần như im lặng |
+| `black_frames` | `ffmpeg blackdetect` | FAIL nếu có đoạn đen ≥1s |
+
+Verdict tổng hợp ghi vào `OutputFile.qc_verdict`: có FAIL → FAIL cả job; không
+FAIL nhưng có WARN → WARN; còn lại → PASS. `publish` (chưa implement) sẽ chỉ
+chạy khi verdict = PASS.
+
+**Đã xác nhận trên pipeline thật**: 9/10 check PASS trên fixture (drift 0ms,
+loudness −14,28 LUFS, checksum khớp...). `background_retained` FAIL trên
+fixture vì nhạc nền ở đó là sine wave tổng hợp mà Demucs tách kém (đã xác minh
+bằng cách đo trực tiếp: nguồn −22dB → sau Demucs −61dB) — hạn chế của fixture
+tổng hợp, không phải bug ở `render`/`audio_mix`. Xem comment trong
+`tests/fixtures/make_fixture.py`.
 
 ## Forced alignment — lệch khỏi kế hoạch, có chủ ý
 
@@ -197,7 +228,9 @@ chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift.
 
 ### Việc tiếp theo
 
-Trục Phase 1 đã xong (ingest → render). Còn lại là các module Phase 2+:
-`diarize` (speaker profile), `compose` (branding/CTA/intro-outro), `qc` (kiểm
-tra tự động trước khi cho publish), `onscreen_text`/`lipsync` (Phase 6 — xem
-quyết định #1 ở dưới). Quyết định còn mở: [docs/decisions.md](docs/decisions.md).
+Trục Phase 1 + qc đã xong (ingest → qc). Còn lại là các module Phase 2+:
+`diarize` (speaker profile — cần quyết định provider, pyannote yêu cầu chấp
+nhận điều khoản HuggingFace), `compose` (branding/CTA/intro-outro — cần asset
+thương hiệu thật để demo), `publish` (OAuth từng nền tảng, Phase 5),
+`onscreen_text`/`lipsync` (Phase 6 — xem quyết định #1 ở dưới). Quyết định còn
+mở: [docs/decisions.md](docs/decisions.md).

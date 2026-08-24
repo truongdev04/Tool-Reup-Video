@@ -54,8 +54,8 @@ def test_loudnorm_hai_luot_dua_ve_gan_target(tmp_path):
 
     assert out.exists()
     # Đo lại bằng chính hàm đo lượt 1 để xác nhận đã tiệm cận target.
-    from services.audio_mix import _measure_loudnorm
-    measured = _measure_loudnorm(out)
+    from services.audio_mix import measure_loudnorm
+    measured = measure_loudnorm(out)
     assert abs(float(measured["input_i"]) - TARGET_I) < 3.0, (
         f"sau chuẩn hoá vẫn lệch xa target: đo được {measured['input_i']} LUFS"
     )
