@@ -18,9 +18,20 @@ là một bản ghi `ApprovalGateRecord` (bảng `approval_gates`) khoá theo
   `Orchestrator._pending_gate` đọc bản ghi; `run_pipeline` dừng ngay sau stage
   đó, đặt `job.status = NEEDS_REVIEW`, **không** ghi đè bằng
   `SUCCEEDED`/`progress=1.0` như đường hoàn tất bình thường.
-- **Tiếp tục sau khi duyệt**: gọi lại `run_pipeline()` (không cần API/method
-  riêng) — mọi stage đã chạy trước cổng cache-hit tức thì (§16), pipeline chỉ
-  thực sự chạy tiếp từ chỗ dừng.
+- **Tiếp tục sau khi duyệt**: `services/pipeline_runner.py::resume_job()` gọi
+  lại `run_pipeline()` (không cần method riêng trong `Orchestrator`) — mọi
+  stage đã chạy trước cổng cache-hit tức thì (§16), pipeline chỉ thực sự chạy
+  tiếp từ chỗ dừng. `resume_job()` đọc `job.presets` (provider dịch/TTS đã
+  lưu lúc `run_for_video()` tạo/chạy job lần đầu) để KHÔNG vô tình đổi
+  provider giữa chừng.
+- **Vận hành qua CLI**: `scripts/manage_gates.py` — `list` (xem trạng thái 4
+  cổng của một job hoặc mọi job của một project), `set-project` (bật/tắt cổng
+  mặc định cho job MỚI), `set-job` (bật/tắt trực tiếp một job đã tồn tại),
+  `approve`, `resume`. Xem docstring đầu file để có ví dụ đầy đủ. Đã chạy thử
+  trên pipeline thật (không phải chỉ unit test): tạo project với
+  `approval_gates={"transcript": True}`, chạy pipeline dừng đúng sau `stt`,
+  `list` hiện đúng "CHỜ DUYỆT", `approve` rồi `resume` chạy tiếp — 4 stage đầu
+  cache-hit, các stage sau chạy thật tới khi xong.
 - **Cấu hình bật/tắt theo project**: `Project.approval_gates` (JSON,
   `ApprovalGate` -> bool). `services/pipeline_runner.py` gọi `ensure_gates()`
   ngay khi tạo/lấy `RenderJob`, đọc config từ đó. Thiếu key nào = tắt (chạy
@@ -46,8 +57,8 @@ là một bản ghi `ApprovalGateRecord` (bảng `approval_gates`) khoá theo
   được kiểm trong `run_pipeline`, không trong `run_stage`/`rerun_from` — coi
   đây là đường vận hành nội bộ đáng tin (người đã biết mình đang sửa gì), có
   chủ đích không chặn lại.
-- Chưa có API/dashboard gọi `approve()` — hiện chỉ gọi được từ Python (script,
-  test, hoặc endpoint tương lai ở Phase 4).
+- Chưa có API/dashboard thật (Phase 4) — `scripts/manage_gates.py` là CLI nội
+  bộ, không có auth/phân quyền ai được gọi `approve`.
 
 ## Voice consent (§18.2)
 

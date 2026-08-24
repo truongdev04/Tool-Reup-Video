@@ -13,7 +13,7 @@ from core.orchestrator import Orchestrator, PipelineReport
 from core.stage import StageContext
 from core.types import StageName
 from db.base import create_all, session_scope
-from db.models import Project, RenderJob
+from db.models import Project, RenderJob, SourceVideo
 from services.approval_gates import ensure_gates
 from services.storage import Storage
 from workers.ingest.stage import register_source
@@ -78,6 +78,10 @@ def run_for_video(
                 job = RenderJob(project_id=project.id, source_video_id=source.id, locale=locale)
                 session.add(job)
                 session.flush()
+            # Ghi lại presets của LẦN GỌI NÀY lên chính job — resume_job() cần
+            # đọc lại đúng provider đã dùng để tiếp tục pipeline sau khi duyệt
+            # gate, không phải fallback về mặc định (§11.2, xem approval-gates.md).
+            job.presets = presets
             # idempotent (§11.1): an toàn gọi lại kể cả job đã có, chỉ tạo
             # bản ghi cổng còn thiếu — không đụng cổng đã duyệt.
             ensure_gates(session, render_job_id=job.id, config=project.approval_gates)
@@ -98,3 +102,28 @@ def run_for_video(
             project_id=project.id, project_name=project.name,
             source_video_id=source.id, reports=reports,
         )
+
+
+def resume_job(job_id: str) -> PipelineReport:
+    """Tiếp tục MỘT job đang dừng ở NEEDS_REVIEW chờ duyệt approval gate
+    (§11.2) — gọi lại `run_pipeline()` từ đầu PIPELINE_ORDER; mọi stage đã
+    chạy trước cổng cache-hit tức thì (§16), pipeline chỉ thực sự chạy tiếp
+    từ chỗ dừng. Xem `.claude/rules/approval-gates.md`.
+
+    Dùng `job.presets` đã lưu lúc tạo/chạy job lần đầu (`run_for_video`) —
+    KHÔNG phải mặc định, nếu không resume có thể chạy tiếp bằng provider
+    dịch/TTS khác với lần chạy gốc mà không ai biết.
+    """
+    create_all()
+    storage = Storage()
+    with session_scope() as session:
+        job = session.get(RenderJob, job_id)
+        if job is None:
+            raise ValueError(f"không có job {job_id}")
+        source = session.get(SourceVideo, job.source_video_id)
+        ctx = StageContext(
+            session=session, job_id=job.id, project_id=job.project_id,
+            source_checksum=source.checksum, locale=job.locale, storage=storage,
+            presets=job.presets or {},
+        )
+        return Orchestrator(ctx).run_pipeline()
