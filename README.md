@@ -76,8 +76,10 @@ queue, QC review, publishing calendar...). Code nằm ở `apps/api/api/`.
 
 ## Trạng thái
 
-Pipeline chạy thật tới `translate`. Clip mẫu 7s, 2 locale: **~9s** lần đầu,
-**~0,04s** khi dùng cache (ngân sách DoD §21 là 2 phút).
+Pipeline chạy thật **từ ingest tới render** — xuất được video cuối cùng có
+giọng lồng tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên. Clip mẫu 7s,
+2 locale: **~22s** lần đầu, **~0,05s** khi dùng cache (ngân sách DoD §21 là
+2 phút).
 
 | Stage | Trạng thái | Công nghệ |
 |---|---|---|
@@ -87,12 +89,33 @@ Pipeline chạy thật tới `translate`. Clip mẫu 7s, 2 locale: **~9s** lần
 | `stt` | ✅ | mlx-whisper (Metal), word timestamps |
 | `segment_plan` | ✅ | logic thuần |
 | `translate` | ✅ | 8 provider, xem bên dưới |
-| `duration_fit` | 🟡 | logic xong, chờ TTS để nối vào pipeline |
-| `diarize`, `tts`, `forced_align`, `timeline_assembly`, `subtitle`, `render`, `qc`, `publish` | ⬜ | stub giữ đúng contract |
+| `duration_fit` | ✅ | dự báo từ độ dài bản dịch (§7) |
+| `tts` | ✅ | đo thời lượng thật, áp atempo (§7) |
+| `forced_align` | ✅ | STT lại trên audio TTS, xem "Forced alignment" bên dưới |
+| `timeline_assembly` | ✅ | đặt từng chunk vào đúng vị trí tuyệt đối (§9) |
+| `subtitle` | ✅ | cắt cue theo CPS/số dòng, xuất SRT (§6.11) |
+| `render` | ✅ | trộn voice+background, loudnorm 2 lượt, burn hardsub, encode VideoToolbox |
+| `diarize`, `onscreen_text`, `lipsync`, `compose`, `qc`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
 
 Nền tảng Phase 0: 23 bảng data model (§10), stage contract (§11.1),
 orchestrator có cache/retry/partial re-run (§11.3, §16), storage layout (§12),
-harness (§21). **66 test.**
+harness (§21). **99 test.**
+
+## Forced alignment — lệch khỏi kế hoạch, có chủ ý
+
+§8 đề xuất WhisperX/MFA. Tool này dùng **chính mlx-whisper chạy lại trên audio
+TTS** để lấy ranh giới đoạn (nơi có khoảng lặng thật), rồi rải ký tự của bản
+dịch — đáng tin hơn text STT nhận dạng — vào các mốc đó theo tỉ lệ ký tự. Đây
+KHÔNG phải forced alignment đúng nghĩa (không dùng model CTC align với text đã
+biết), mà là xấp xỉ tuyến tính có neo bằng cấu trúc thời gian thật.
+
+Lý do: WhisperX/MFA cần model CTC theo từng ngôn ngữ, và các bộ có sẵn phủ tốt
+Anh/Âu nhưng rất yếu hoặc không có cho tiếng Nhật, Việt, Ả Rập — đúng các locale
+mục tiêu của tool (§23 #4). Cách tiếp cận này hoạt động bất kể ngôn ngữ. Ghi
+nhận như nợ kỹ thuật: nâng cấp lên WhisperX cho locale có model CTC tốt là việc
+hợp lý ở Phase 2+ nếu cần độ chính xác cấp phoneme (vd. lip-sync, karaoke).
+
+Chi tiết: `workers/forced_align/aligner.py`.
 
 ## Provider LLM
 
@@ -134,7 +157,7 @@ VLA_TRANSLATION_PROVIDER=claude .venv/bin/python scripts/run_pipeline.py
 API key chỉ đọc từ biến môi trường tại thời điểm gọi, **không bao giờ lưu vào
 database hay ghi ra log** (§18.1).
 
-### Ba điểm lệch khỏi kế hoạch (có chủ ý)
+### Các điểm lệch khỏi kế hoạch (có chủ ý)
 
 1. **Storage layout** (§12) — artifact phụ thuộc locale chuyển xuống
    `jobs/{job_id}/`; layout phẳng của kế hoạch khiến bản ES và JA ghi đè nhau.
@@ -151,13 +174,30 @@ database hay ghi ra log** (§18.1).
    ngữ. Với video 60 phút × 10 locale, đây là chênh lệch giữa chạy STT 1 lần và
    10 lần.
 
+4. **Forced alignment** (§8) — dùng mlx-whisper thay vì WhisperX/MFA. Xem mục
+   riêng ở trên.
+
+5. **cps_max là ràng buộc MỀM khi TTS đọc nhanh hơn ngưỡng đọc** (§6.11) —
+   TTS thường đọc nhanh hơn tốc độ đọc thoải mái của phụ đề (đã đo: `macos_say`
+   đọc es-ES ~20 cps, trong khi `cps_max` của locale là 17). Tách cue NGHIÊM
+   NGẶT theo CPS trong tình huống đó sẽ vỡ vụn thành cue 1 từ nhấp nháy suốt
+   video — đọc còn khó hơn nhiều so với một cue hơi nhanh nhưng trọn vẹn. Nên
+   splitter chỉ tách vì lý do CPS **sau khi** cue đã đạt `min_cue_ms` (đủ dài để
+   đứng một mình); một unit ngắn hơn `min_cue_ms` thì chấp nhận vượt CPS thay vì
+   tách. Xem `workers/subtitle/splitter.py`.
+
 ### Số liệu cần hiệu chuẩn
 
 `speech_rate_cps` trong `config/presets/locale/*.json` hiện là **ước lượng**,
-chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift. Phải đo lại sau khi chốt
-provider TTS, rồi bật cờ `speech_rate_calibrated`.
+chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift.
+
+Đã hiệu chuẩn cho `macos_say` (`config/tts/macos_say.json`, đo bằng
+`scripts/calibrate_speech_rate.py`). Đổi provider TTS thì phải đo lại — tốc độ
+đọc phụ thuộc provider, không chỉ phụ thuộc ngôn ngữ.
 
 ### Việc tiếp theo
 
-`tts` → `forced_align` → `timeline_assembly` → `subtitle` → `render`.
-Quyết định còn mở: [docs/decisions.md](docs/decisions.md).
+Trục Phase 1 đã xong (ingest → render). Còn lại là các module Phase 2+:
+`diarize` (speaker profile), `compose` (branding/CTA/intro-outro), `qc` (kiểm
+tra tự động trước khi cho publish), `onscreen_text`/`lipsync` (Phase 6 — xem
+quyết định #1 ở dưới). Quyết định còn mở: [docs/decisions.md](docs/decisions.md).

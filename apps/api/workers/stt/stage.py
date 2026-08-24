@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from sqlalchemy import select
@@ -11,18 +10,7 @@ from core.stage import NonRetryableError, Stage, StageContext, StageResult
 from core.types import CacheScope, ArtifactKind, StageName
 from db.models import STTSegment, SourceVideo, Transcript
 from services.presets import to_language_code
-from workers.stt.transcriber import DEFAULT_MODEL, DEV_MODEL, transcribe
-
-
-def _model_for_env() -> str:
-    """Model nhẹ cho dev, model đầy đủ cho chạy thật.
-
-    Cấu hình qua env chứ không hard-code (§2.2). DoD §21 yêu cầu clip 10s chạy
-    hết pipeline dưới 2 phút — large-v3-turbo tải model lần đầu mất lâu hơn thế.
-    """
-    return os.environ.get("VLA_WHISPER_MODEL") or (
-        DEV_MODEL if os.environ.get("VLA_DEV_FAST") else DEFAULT_MODEL
-    )
+from workers.stt.transcriber import resolve_model_for_env, transcribe
 
 
 class STTStage(Stage):
@@ -32,11 +20,11 @@ class STTStage(Stage):
 
     @property
     def provider_version(self) -> str:  # type: ignore[override]
-        return _model_for_env()
+        return resolve_model_for_env()
 
     def cache_params(self, ctx: StageContext) -> dict[str, Any]:
         """Transcript KHÔNG phụ thuộc locale đích — mọi bản ngôn ngữ dùng chung."""
-        return {"model": _model_for_env()}
+        return {"model": resolve_model_for_env()}
 
     def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
         source = ctx.session.scalars(
@@ -53,7 +41,7 @@ class STTStage(Stage):
         if not audio_path.exists():
             raise NonRetryableError("chưa có audio — chạy stage separate trước")
 
-        model = _model_for_env()
+        model = resolve_model_for_env()
         result = transcribe(
             audio_path, model=model, language=to_language_code(source.source_locale)
         )

@@ -25,6 +25,20 @@ DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 DEV_MODEL = "mlx-community/whisper-base-mlx"
 
 
+def resolve_model_for_env() -> str:
+    """Model nhẹ cho dev, model đầy đủ cho chạy thật.
+
+    Cấu hình qua env chứ không hard-code (§2.2). DoD §21 yêu cầu clip 10s chạy
+    hết pipeline dưới 2 phút — large-v3-turbo tải model lần đầu mất lâu hơn thế.
+    Dùng chung giữa stage `stt` và `forced_align` — cả hai đều gọi Whisper.
+    """
+    import os
+
+    return os.environ.get("VLA_WHISPER_MODEL") or (
+        DEV_MODEL if os.environ.get("VLA_DEV_FAST") else DEFAULT_MODEL
+    )
+
+
 @dataclass
 class Word:
     text: str

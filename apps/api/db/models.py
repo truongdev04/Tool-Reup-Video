@@ -230,6 +230,10 @@ class TTSChunk(Base, PKMixin, TimestampMixin):
     #: Hệ số atempo đã áp — phải nằm trong [tempo_min, tempo_max] (§7.2).
     tempo_ratio: Mapped[float] = mapped_column(Float, default=1.0)
     cache_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    #: Mốc thời gian (ms, TƯƠNG ĐỐI so với đầu file audio của chính chunk này)
+    #: cho từng ký tự của `text` — độ dài luôn là len(text)+1 (điểm biên).
+    #: Ghi bởi stage forced_align (§8), đọc bởi stage subtitle để cắt cue.
+    char_boundaries_ms: Mapped[list] = mapped_column(JSON, default=list)
 
     __table_args__ = (Index("ix_chunk_unit_idx", "translation_unit_id", "idx"),)
 

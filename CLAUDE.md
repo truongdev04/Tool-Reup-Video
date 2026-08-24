@@ -130,9 +130,21 @@ Xét từng đơn vị độc lập là sai: mỗi đơn vị lệch 240ms đề
 ### Nguyên tắc bất biến về subtitle (§8.3)
 
 **Subtitle luôn sinh từ timestamp của audio sẽ phát, không bao giờ từ audio
-nguồn.** Sau TTS phải chạy forced alignment trên chính audio mới. Cột
-`subtitle_cues.from_forced_alignment` là cờ để QC kiểm chứng bằng dữ liệu thay
-vì bằng mắt.
+nguồn.** Cột `subtitle_cues.from_forced_alignment` là cờ để QC kiểm chứng bằng
+dữ liệu thay vì bằng mắt.
+
+`forced_align` (`workers/forced_align/aligner.py`) KHÔNG dùng WhisperX/MFA như
+§8 đề xuất — dùng chính mlx-whisper chạy lại trên audio TTS để lấy ranh giới
+đoạn (nơi có khoảng lặng thật), rồi rải ký tự bản dịch vào đó theo tỉ lệ. Đây
+là xấp xỉ tuyến tính có neo bằng audio thật, không phải alignment cấp phoneme.
+Lý do: WhisperX/MFA cần model CTC riêng từng ngôn ngữ, phủ yếu các locale mục
+tiêu (ja/vi/ar). Cách này không phụ thuộc ngôn ngữ.
+
+**cps_max là ràng buộc MỀM khi TTS đọc nhanh hơn ngưỡng đọc** — TTS thường đọc
+nhanh hơn tốc độ đọc thoải mái của phụ đề. `workers/subtitle/splitter.py` chỉ
+tách cue vì lý do CPS sau khi cue đã đạt `min_cue_ms`; nếu không, giọng đọc
+nhanh hơn `cps_max` một chút (rất hay gặp) sẽ khiến MỌI cặp từ liên tiếp "vượt
+ngưỡng", vỡ vụn thành cue 1 từ nhấp nháy suốt video.
 
 ### Tái dựng audio (§9)
 
@@ -140,15 +152,40 @@ Track cuối là `TTS + background gốc`, **không phải thay thế**. Demucs 
 `background.wav` và phải giữ lại — thay nguyên track audio bằng TTS là mất sạch
 nhạc nền, tiếng động và không khí video gốc.
 
-### Provider LLM
+`timeline_assembly` đặt mỗi `tts_chunk` tại **vị trí tuyệt đối** `unit.start_ms`
+trong track dài bằng cả video (`services/audio_timeline.py`), không nối đuôi
+nhau — nhờ vậy khoảng lặng và các mốc hình ảnh vẫn đúng chỗ. `render` trộn
+track đó với `background.wav` rồi chuẩn hoá bằng **loudnorm hai lượt**
+(`services/audio_mix.py`) — một lượt cho kết quả không ổn định giữa các file.
 
-Thêm provider mới **không phải sửa code** — thả một file JSON vào
-`apps/api/config/providers/`. Chỉ có 3 giao thức thật sự khác nhau
-(`services/providers/adapters.py`): `openai_compatible` (phủ OpenAI, OpenRouter,
-9Router, Groq, DeepSeek, Ollama, LM Studio, vLLM...), `anthropic`, `gemini`,
-cộng `mock` cho test.
+### Cách stage sau lấy dữ liệu của stage trước
+
+Stage không gọi stage khác (§11.1) — chúng liên lạc qua **DB + đường dẫn
+storage theo quy ước cố định**, không qua `output_ref`. Ví dụ: `render` không
+nhận đường dẫn SRT từ `subtitle`'s output — nó tự tính lại đường dẫn đó bằng
+`Storage.path_for(ArtifactKind.SUBTITLE, ...)`, đúng quy ước mà `subtitle` đã
+dùng để ghi file. `output_ref` chỉ phục vụ cache/observability (§16), không
+phải kênh truyền dữ liệu giữa các stage.
+
+Hệ quả: một stage phụ thuộc COMPOSE (còn là stub, Phase 2) trong
+`STAGE_DEPENDENCIES` vẫn dirty-propagate đúng khi upstream thật của nó (vd.
+subtitle) đổi — vì cơ chế `(input_hash, output_digest)` xuyên qua cả stub. Xem
+`core/orchestrator._effective_key_of`.
+
+### Provider LLM và TTS
+
+Thêm provider mới **không phải sửa code** — thả một file JSON. Dịch:
+`apps/api/config/providers/`, 3 giao thức (`services/providers/adapters.py`):
+`openai_compatible` (phủ OpenAI, OpenRouter, 9Router, Groq, DeepSeek, Ollama,
+LM Studio, vLLM...), `anthropic`, `gemini`, cộng `mock` cho test. TTS:
+`apps/api/config/tts/`, tương tự (`services/tts/adapters.py`):
+`macos_say` (local), `elevenlabs`, `openai_tts`.
 
 API key chỉ đọc từ biến môi trường tại thời điểm gọi. Không lưu DB, không log.
+
+Tốc độ đọc (`speech_rate_cps`) nằm trong config của TỪNG provider TTS, không
+phải locale preset — đo bằng `scripts/calibrate_speech_rate.py`. Đổi provider
+TTS thì phải đo lại.
 
 ### Storage
 
@@ -177,10 +214,18 @@ chủ ý so với layout phẳng của §12, vốn sẽ khiến bản ES và JA 
 
 ## Nợ kỹ thuật đã biết
 
-`speech_rate_cps` trong `config/presets/locale/*.json` là **ước lượng**, chưa đo
-từ TTS thật. Đây là con số quyết định `char_budget`, và sai số ở đó đẩy thẳng
-vào drift. Phải hiệu chuẩn sau khi chốt provider TTS rồi mới bật cờ
-`speech_rate_calibrated` — hiện có test chặn việc tự nhận đã hiệu chuẩn.
+- `speech_rate_cps` trong `config/presets/locale/*.json` là ước lượng chung,
+  chưa đo cho từng provider TTS (đã hiệu chuẩn riêng cho `macos_say` trong
+  `config/tts/macos_say.json` — provider khác vẫn đang dùng ước lượng chung
+  cho tới khi đo).
+- `forced_align` là xấp xỉ tuyến tính, không phải alignment cấp phoneme — xem
+  mục "Nguyên tắc bất biến về subtitle" ở trên. Đủ cho subtitle timing, không
+  đủ chính xác cho lip-sync hay karaoke-highlight.
+- `render` chưa áp `FitStrategy.VIDEO_STRETCH` (co giãn hình) — quyết định này
+  được lưu trong `SegmentTiming` nhưng chưa có stage nào đọc và thực thi nó.
+  Compose (Phase 2, branding) là nơi hợp lý để làm việc này.
+- `render` chưa có render preset (§14) để chọn bitrate/aspect ratio theo cấu
+  hình — đang hard-code 6000k, giữ nguyên resolution/aspect nguồn.
 
 ## Commit
 
