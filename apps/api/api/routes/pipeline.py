@@ -16,12 +16,14 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from core.config import get_settings
-from core.types import PIPELINE_ORDER
+from core.types import PIPELINE_ORDER, ArtifactKind, StageName
 from db.base import create_all, session_scope
 from db.models import (
+    OutputFile,
     RenderJob,
     SegmentTiming,
     SourceVideo,
+    StageRun,
     Translation,
     TranslationUnit,
     TTSChunk,
@@ -91,8 +93,7 @@ async def run(
         video_path = make_sample()
         rights_note = "Fixture tự sinh bằng ffmpeg lavfi / say — dùng cho chạy thử nội bộ."
     else:
-        suffix = Path(video.filename or "upload.mp4").suffix or ".mp4"
-        video_path = _UPLOAD_DIR / f"upload_{video.filename}"
+        video_path = _UPLOAD_DIR / f"upload_{video.filename or 'upload.mp4'}"
         with video_path.open("wb") as fh:
             shutil.copyfileobj(video.file, fh)
         rights_note = f"Video người dùng tải lên qua dev viewer: {video.filename}"
@@ -210,12 +211,30 @@ def job_detail(job_id: str) -> dict:
                 "audio_duration_ms": chunk.duration_ms if chunk else None,
             })
 
+        final = session.scalars(
+            select(OutputFile).where(
+                OutputFile.render_job_id == job_id, OutputFile.kind == ArtifactKind.FINAL,
+            )
+        ).first()
+        qc_run = session.scalars(
+            select(StageRun)
+            .where(StageRun.render_job_id == job_id, StageRun.stage == StageName.QC)
+            .order_by(StageRun.created_at.desc())
+            .limit(1)
+        ).first()
+
         return {
             "id": job.id,
             "locale": job.locale,
             "status": str(job.status),
             "source_filename": source.filename if source else None,
             "units": unit_rows,
+            "qc_verdict": str(final.qc_verdict) if final and final.qc_verdict else None,
+            "qc_findings": (qc_run.output_ref or {}).get("findings", []) if qc_run else [],
+            "final_video_url": (
+                f"/api/video/{job_id}" if final and (Storage().root / final.storage_path).exists()
+                else None
+            ),
         }
 
 
@@ -245,3 +264,21 @@ def audio(job_id: str, unit_idx: int):
             raise HTTPException(404, "file audio không còn trên đĩa")
 
         return FileResponse(path, media_type="audio/wav")
+
+
+@router.get("/video/{job_id}")
+def video(job_id: str):
+    with session_scope() as session:
+        final = session.scalars(
+            select(OutputFile).where(
+                OutputFile.render_job_id == job_id, OutputFile.kind == ArtifactKind.FINAL,
+            )
+        ).first()
+        if final is None:
+            raise HTTPException(404, "chưa có output cuối cho job này")
+
+        path = Storage().root / final.storage_path
+        if not path.exists():
+            raise HTTPException(404, "file video không còn trên đĩa")
+
+        return FileResponse(path, media_type="video/mp4")

@@ -156,10 +156,35 @@ async function showJob(jobId) {
   $("#detail-card").classList.remove("hidden");
   $("#detail-locale").textContent = `— ${job.locale} (${job.status})`;
 
+  let html = "";
+
+  if (job.final_video_url) {
+    html += `
+      <div class="stage-block">
+        <h3>Video cuối cùng ${job.qc_verdict ? pill(job.qc_verdict) : ""}</h3>
+        <video controls src="${job.final_video_url}" style="width:100%;max-width:360px;border-radius:8px"></video>
+        ${job.qc_findings.length ? `
+          <table style="margin-top:10px">
+            <thead><tr><th>Check</th><th>Verdict</th><th>Ghi chú</th></tr></thead>
+            <tbody>
+              ${job.qc_findings.map(f => `
+                <tr>
+                  <td class="mono">${f.check}</td>
+                  <td>${pill(f.verdict)}</td>
+                  <td>${f.message}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        ` : ""}
+      </div>
+    `;
+  }
+
   if (job.units.length === 0) {
-    $("#detail-body").innerHTML = "<p>Chưa có translation_units — pipeline chưa chạy tới segment_plan.</p>";
+    html += "<p>Chưa có translation_units — pipeline chưa chạy tới segment_plan.</p>";
   } else {
-    $("#detail-body").innerHTML = `
+    html += `
       <table>
         <thead>
           <tr>
@@ -187,6 +212,8 @@ async function showJob(jobId) {
       </table>
     `;
   }
+
+  $("#detail-body").innerHTML = html;
   $("#detail-card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 window.showJob = showJob;

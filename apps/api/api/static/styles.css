@@ -117,9 +117,9 @@ td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
   padding: 2px 8px;
   border-radius: 999px;
 }
-.pill.succeeded { background: var(--ok-soft); color: var(--ok); }
-.pill.failed { background: var(--crit-soft); color: var(--crit); }
-.pill.needs_review { background: var(--warn-soft); color: var(--warn); }
+.pill.succeeded, .pill.pass { background: var(--ok-soft); color: var(--ok); }
+.pill.failed, .pill.fail { background: var(--crit-soft); color: var(--crit); }
+.pill.needs_review, .pill.warn { background: var(--warn-soft); color: var(--warn); }
 .pill.running, .pill.pending { background: var(--accent-soft); color: var(--accent); }
 .pill.cancelled { background: var(--ground); color: var(--muted); }
 
