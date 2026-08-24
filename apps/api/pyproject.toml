@@ -21,6 +21,11 @@ dependencies = [
     # Đọc bảng cmap của font đã bundle để đo glyph coverage cho hardsub
     # (§13.2, §14) — xem services/fonts.py, services/qc_media.py.
     "fonttools>=4.50",
+    # Hạ tầng Phase 3 (§20): worker tách tiến trình qua Redis queue — xem
+    # core/celery_app.py, .claude/rules/infra.md. Redis LOCAL trên máy chạy
+    # worker (`brew install redis`), không phải server từ xa.
+    "celery>=5.3",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]

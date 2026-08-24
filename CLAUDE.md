@@ -37,6 +37,7 @@ không cần đọc hết mọi file mỗi phiên.
 | `workers/qc/`, `services/qc_media.py` | [qc.md](.claude/rules/qc.md) |
 | `services/fonts.py`, `apps/api/assets/fonts/` — dùng chung giữa `render` và `qc` | [fonts.md](.claude/rules/fonts.md) |
 | `services/approval_gates.py`, `services/voice_consent.py`, `ApprovalGateRecord`/`VoiceConsent` | [approval-gates.md](.claude/rules/approval-gates.md) |
+| `core/celery_app.py`, `core/tasks.py`, `scripts/worker.py` — hạ tầng queue | [infra.md](.claude/rules/infra.md) |
 | Viết code mới ở bất kỳ đâu (idempotency, hard-code, module thuần, test) | [coding-style.md](.claude/rules/coding-style.md) |
 | Trước khi bắt đầu việc mới — biết trước cái gì đang dang dở | [tech-debt.md](.claude/rules/tech-debt.md) |
 

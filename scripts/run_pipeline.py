@@ -1,12 +1,15 @@
 #!/usr/bin/env python
-"""Harness chạy pipeline tuần tự trên 1 clip — Phase 0 (docs §20, §21).
+"""Harness chạy pipeline trên 1 clip — Phase 0 (docs §20, §21).
 
 Mục tiêu DoD: clip mẫu 10 giây chạy hết pipeline dưới 2 phút (docs §21).
-Không dùng queue ở giai đoạn này — gọi thẳng từng Stage theo thứ tự docs §4.
+Mặc định gọi thẳng từng Stage trong tiến trình này, theo thứ tự docs §4 —
+`--via-celery` gửi qua hàng đợi Redis cho tiến trình worker riêng chạy thay
+(hạ tầng Phase 3, xem `.claude/rules/infra.md`).
 
     python scripts/run_pipeline.py                    # fixture 10s, 2 locale
     python scripts/run_pipeline.py --video path.mp4 --locales es-ES ja-JP
     python scripts/run_pipeline.py --rerun-from translate   # partial re-run §11.3
+    python scripts/run_pipeline.py --via-celery        # cần `scripts/worker.py` đang chạy
 
 Logic tạo project/job dùng chung với dev server ở `services/pipeline_runner.py`.
 """
@@ -23,11 +26,26 @@ _API = Path(__file__).resolve().parents[1] / "apps" / "api"
 sys.path.insert(0, str(_API))
 
 from core.config import get_settings  # noqa: E402
-from core.orchestrator import PipelineReport  # noqa: E402
-from core.types import JobStatus  # noqa: E402
+from core.orchestrator import PipelineReport, StageOutcome  # noqa: E402
+from core.types import JobStatus, StageName  # noqa: E402
 from services.pipeline_runner import run_for_video  # noqa: E402
 
 GREEN, YELLOW, RED, DIM, RESET = "\033[32m", "\033[33m", "\033[31m", "\033[2m", "\033[0m"
+
+
+def _report_from_dict(d: dict) -> PipelineReport:
+    """Dựng lại `PipelineReport` từ dict JSON-safe mà `core.tasks` trả về —
+    task Celery không trả dataclass thẳng qua ranh giới process (xem
+    `core/tasks.py::_serialize`)."""
+    report = PipelineReport(job_id=d["job_id"], locale=d["locale"])
+    report.outcomes = [
+        StageOutcome(
+            stage=StageName(o["stage"]), status=JobStatus(o["status"]),
+            cached=o["cached"], duration_ms=o["duration_ms"], note=o["note"],
+        )
+        for o in d["outcomes"]
+    ]
+    return report
 
 
 def _print_report(report: PipelineReport) -> None:
@@ -56,6 +74,9 @@ def main() -> int:
     parser.add_argument("--tts-provider", dest="tts_provider")
     parser.add_argument("--rerun-from", dest="rerun_from",
                         help="chạy lại từ stage này và mọi stage phụ thuộc (§11.3)")
+    parser.add_argument("--via-celery", action="store_true",
+                        help="gửi qua Celery task (Redis broker) thay vì gọi trực tiếp — "
+                             "cần `scripts/worker.py` đang chạy (§20, .claude/rules/infra.md)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -78,23 +99,37 @@ def main() -> int:
         video = make_sample()
         print(f"{DIM}dùng fixture: {video.name}{RESET}")
 
+    rights_note = "Fixture tự sinh bằng ffmpeg lavfi / say — dùng cho test nội bộ."
+
     wall_start = time.perf_counter()
-    result = run_for_video(
-        video, args.locales, project_name=args.project,
-        rights_note="Fixture tự sinh bằng ffmpeg lavfi / say — dùng cho test nội bộ.",
-        translation_provider=args.translation_provider,
-        tts_provider=args.tts_provider,
-        rerun_from=args.rerun_from,
-    )
+    if args.via_celery:
+        from core.tasks import run_for_video_task
+
+        async_result = run_for_video_task.delay(
+            str(video), args.locales, project_name=args.project, rights_note=rights_note,
+            translation_provider=args.translation_provider, tts_provider=args.tts_provider,
+            rerun_from=args.rerun_from,
+        )
+        print(f"{DIM}task Celery {async_result.id} đã gửi — chờ worker xử lý...{RESET}")
+        payload = async_result.get(timeout=300)
+        reports = [_report_from_dict(r) for r in payload["reports"]]
+    else:
+        result = run_for_video(
+            video, args.locales, project_name=args.project, rights_note=rights_note,
+            translation_provider=args.translation_provider,
+            tts_provider=args.tts_provider,
+            rerun_from=args.rerun_from,
+        )
+        reports = result.reports
     wall = time.perf_counter() - wall_start
 
-    for r in result.reports:
+    for r in reports:
         _print_report(r)
 
     budget = 120.0  # DoD §21: dưới 2 phút
     status = f"{GREEN}ĐẠT{RESET}" if wall < budget else f"{RED}VƯỢT{RESET}"
     print(f"\n  Tổng thời gian thực: {wall:.2f}s / {budget:.0f}s  →  {status}  {DIM}(DoD §21){RESET}")
-    return 0 if all(r.ok for r in result.reports) else 1
+    return 0 if all(r.ok for r in reports) else 1
 
 
 if __name__ == "__main__":

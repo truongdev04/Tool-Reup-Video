@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     diarization_min_speakers: int | None = None
     diarization_max_speakers: int | None = None
 
+    #: Broker/backend Celery (§20, Phase 3) — Redis LOCAL trên máy chạy
+    #: worker (`brew install redis`), không phải server từ xa. Xem
+    #: core/celery_app.py, .claude/rules/infra.md.
+    redis_url: str = "redis://localhost:6379/0"
+
     @field_validator("storage_root")
     @classmethod
     def _resolve(cls, v: Path) -> Path:

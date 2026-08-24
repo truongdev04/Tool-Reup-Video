@@ -33,6 +33,12 @@
 - `onscreen_text` vẫn là `NotImplementedStage` — theo §15, `onscreen_text`
   còn bản ghi `pending` phải làm QC FAIL, nhưng QC hiện không có check này vì
   chưa có dữ liệu OCR thật để kiểm.
-- Hạ tầng Phase 3 (Redis/Celery, worker tách tiến trình) chưa bắt đầu — toàn
-  bộ pipeline vẫn chạy tuần tự trong một tiến trình qua
-  `scripts/run_pipeline.py`/dev viewer.
+- Hạ tầng Phase 3 (Redis/Celery, worker tách tiến trình) đã có — xem
+  [infra.md](infra.md). Dev viewer (`apps/api/api/routes/pipeline.py`) vẫn
+  chạy đồng bộ có chủ ý (không phải dashboard Phase 4 thật); chỉ
+  `scripts/run_pipeline.py --via-celery` đi qua worker. Worker BẮT BUỘC
+  `--pool=solo` (đã set mặc định trong `scripts/worker.py`) vì `mlx-whisper`
+  (Metal GPU) không sống sót qua `fork()` của pool `prefork` mặc định — đã
+  bắt lỗi này khi chạy thử thật, không phải đoán. Chưa test nhiều job chạy
+  song song thật sự (solo = xếp hàng tuần tự trong 1 worker); chưa có
+  supervisor tự khởi động lại worker khi crash.

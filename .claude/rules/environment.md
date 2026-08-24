@@ -35,6 +35,11 @@ VLA_TRANSLATION_PROVIDER=mock .venv/bin/python scripts/run_pipeline.py
 
 # Reset trạng thái
 rm -f vla.db && rm -rf storage/projects/*
+
+# Hạ tầng Celery/Redis (§20 Phase 3) — xem .claude/rules/infra.md
+brew services start redis                          # một lần
+.venv/bin/python scripts/worker.py                  # tiến trình worker riêng
+.venv/bin/python scripts/run_pipeline.py --via-celery   # gửi qua Redis thay vì gọi trực tiếp
 ```
 
 Không có bước build, không có linter cấu hình sẵn.
