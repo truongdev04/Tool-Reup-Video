@@ -74,13 +74,21 @@ STAGE_DEPENDENCIES: dict[StageName, tuple[StageName, ...]] = {
     StageName.SUBTITLE: (StageName.FORCED_ALIGN, StageName.TIMELINE_ASSEMBLY),
     StageName.ONSCREEN_TEXT: (StageName.ANALYZE, StageName.TRANSLATE),
     StageName.LIPSYNC: (StageName.TIMELINE_ASSEMBLY,),
-    StageName.COMPOSE: (
-        StageName.TIMELINE_ASSEMBLY,
-        StageName.SUBTITLE,
-        StageName.ONSCREEN_TEXT,
-        StageName.LIPSYNC,
-    ),
-    StageName.RENDER: (StageName.COMPOSE,),
+    #: COMPOSE chỉ áp logo/watermark lên video gốc (§6.14 tối thiểu) — không
+    #: phụ thuộc locale, không đọc timeline_assembly/subtitle. Cố ý KHÔNG liệt
+    #: kê phụ thuộc nào ở đây: source_checksum đã tự nhiên nằm trong cache key
+    #: của mọi stage (xem stage_input_hash), nên compose không cần đi qua
+    #: INGEST để bắt thay đổi source. Nếu sau này compose thật sự bắt đầu đọc
+    #: dữ liệu từ onscreen_text/lipsync (khi hai stage đó hết là stub), PHẢI
+    #: thêm chúng vào đây — thiếu thì partial re-run sẽ im lặng bỏ qua thay
+    #: đổi (§16).
+    StageName.COMPOSE: (),
+    #: RENDER liệt kê TRỰC TIẾP mọi thứ nó thật sự đọc — composed video (hoặc
+    #: source nếu compose bị bỏ qua), voice track đã ghép, và file phụ đề.
+    #: Không dựa vào COMPOSE để "mang hộ" phụ thuộc vào TIMELINE_ASSEMBLY/
+    #: SUBTITLE — compose không còn phụ thuộc hai stage đó nữa (xem trên), nên
+    #: làm vậy sẽ khiến sửa bản dịch xong mà render vẫn dùng cache cũ (§16).
+    StageName.RENDER: (StageName.COMPOSE, StageName.TIMELINE_ASSEMBLY, StageName.SUBTITLE),
     StageName.QC: (StageName.RENDER,),
     StageName.PUBLISH: (StageName.QC,),
 }
@@ -131,6 +139,10 @@ class ArtifactKind(StrEnum):
     SOURCE = "source"
     ANALYSIS = "analysis"
     SEPARATED = "separated"
+    #: Video đã áp logo/watermark — KHÔNG phụ thuộc locale (branding giống
+    #: nhau cho mọi bản ngôn ngữ của cùng một video), nên nằm ở cấp project
+    #: giống SEPARATED, không phải jobs/{job_id}/ (§6.14, §9).
+    COMPOSED = "composed"
     TRANSCRIPT = "transcript"
     TRANSLATION = "translation"
     TTS = "tts"

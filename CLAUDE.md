@@ -94,6 +94,19 @@ Ba cơ chế chồng lên nhau trong `Orchestrator`:
 
 3. **Bump `config_version`** trong `core/config.py` để vô hiệu hoá toàn bộ cache.
 
+4. **`STAGE_DEPENDENCIES` phải khớp với dữ liệu stage THẬT SỰ đọc, không phải
+   sơ đồ ban đầu trong kế hoạch.** `__upstream__` của cache key được suy ra từ
+   graph này (không phải từ code thật của stage), nên graph sai là cache sai
+   mà không có lỗi runtime nào báo. Lỗi thật đã xảy ra: `compose` được implement
+   lại (chỉ áp logo, không đọc `timeline_assembly`/`subtitle` như sơ đồ gốc)
+   nhưng graph vẫn giữ nguyên phụ thuộc cũ — khiến `CacheScope.SOURCE` của nó
+   vô nghĩa (cache key bị nhiễm theo locale dù bản thân stage không dùng dữ
+   liệu đó). Sửa: cập nhật graph khớp implementation thật, và không dựa vào
+   một stage "mang hộ" phụ thuộc của downstream — `render` phải khai TRỰC TIẾP
+   mọi thứ nó đọc (`compose`, `timeline_assembly`, `subtitle`), không dựa vào
+   `compose` mang hộ hai cái sau. Khi đổi dữ liệu một stage đọc, LUÔN kiểm tra
+   lại `STAGE_DEPENDENCIES` của chính nó có còn đúng không.
+
 Nguyên tắc khi phân vân: cache sai thì xuất ra video có audio cũ mà không ai
 biết; cache trượt thì chỉ tốn thêm thời gian. **Luôn nghiêng về chạy lại.**
 
@@ -157,6 +170,17 @@ trong track dài bằng cả video (`services/audio_timeline.py`), không nối 
 nhau — nhờ vậy khoảng lặng và các mốc hình ảnh vẫn đúng chỗ. `render` trộn
 track đó với `background.wav` rồi chuẩn hoá bằng **loudnorm hai lượt**
 (`services/audio_mix.py`) — một lượt cho kết quả không ổn định giữa các file.
+
+### Compose / branding (§6.14)
+
+`compose` (`workers/compose/stage.py`) chỉ áp logo/watermark — KHÔNG phụ thuộc
+locale nên `cache_scope=SOURCE`, chạy một lần cho mọi job của cùng source.
+Chưa có `Project.brand_profile_id` thì tự sinh brand placeholder (logo tổng
+hợp qua `tests/fixtures/make_brand_assets.py`, `BrandProfile.is_placeholder=True`)
+— để trục branding chạy được đầu-cuối mà không cần asset thật. `render` kiểm
+tra `composed.mp4` có tồn tại theo quy ước path không, có thì dùng, không thì
+fallback về video gốc — compose có thể bỏ qua (brand không có logo) mà không
+chặn pipeline.
 
 ### Cách stage sau lấy dữ liệu của stage trước
 

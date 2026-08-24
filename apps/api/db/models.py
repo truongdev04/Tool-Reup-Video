@@ -63,6 +63,14 @@ class BrandProfile(Base, PKMixin, TimestampMixin):
     intro_path: Mapped[str | None] = mapped_column(String(500))
     outro_path: Mapped[str | None] = mapped_column(String(500))
     cta_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    #: Vị trí đặt logo: top_left/top_right/bottom_left/bottom_right/center (§6.14).
+    logo_position: Mapped[str] = mapped_column(String(20), default="bottom_right")
+    logo_opacity: Mapped[float] = mapped_column(Float, default=0.85)
+    #: Bề rộng logo tính theo % bề rộng video, cao tự co giãn đúng tỉ lệ.
+    logo_scale_pct: Mapped[float] = mapped_column(Float, default=12.0)
+    #: True khi đây là brand tự sinh cho demo (chưa có asset thật của người
+    #: dùng) — để không lẫn với brand profile thật khi liệt kê/dọn dẹp.
+    is_placeholder: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class SubtitlePreset(Base, PKMixin, TimestampMixin):

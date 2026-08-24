@@ -11,7 +11,7 @@ import pytest
 
 from core.orchestrator import Orchestrator, dependents_of
 from core.stage import Stage, StageContext, StageResult, register
-from core.types import PIPELINE_ORDER, JobStatus, StageName
+from core.types import PIPELINE_ORDER, STAGE_DEPENDENCIES, JobStatus, StageName
 from db.models import Project, RenderJob, SourceVideo
 
 
@@ -233,3 +233,27 @@ def test_stage_source_scope_cho_hash_giong_nhau_moi_locale(session, storage):
         assert key_for(stage_name, "es-ES") == key_for(stage_name, "ja-JP"), (
             f"{stage_name} khai báo SOURCE scope nhưng cache key vẫn đổi theo locale"
         )
+
+
+def test_compose_khong_phu_thuoc_cac_stage_theo_locale():
+    """compose chỉ áp logo lên video gốc, không đọc timeline_assembly/subtitle
+    — phải KHÔNG nằm trong tập dirty khi sửa bản dịch/audio, nếu không
+    CacheScope.SOURCE của nó sẽ vô nghĩa (cache key bị nhiễm theo locale dù
+    bản thân stage không dùng dữ liệu đó)."""
+    dirty = dependents_of(StageName.TRANSLATE)
+    assert StageName.COMPOSE not in dirty, (
+        "compose không được phụ thuộc translate — nó không đọc bản dịch"
+    )
+    dirty_from_subtitle = dependents_of(StageName.SUBTITLE)
+    assert StageName.COMPOSE not in dirty_from_subtitle
+
+
+def test_render_phu_thuoc_truc_tiep_khong_qua_trung_gian_compose():
+    """render đọc trực tiếp timeline_assembly (voice track) và subtitle (SRT)
+    — phải nằm trong STAGE_DEPENDENCIES của nó, không dựa vào compose "mang
+    hộ". compose giờ không phụ thuộc gì nên không còn mang hộ được nữa; thiếu
+    khai báo trực tiếp này thì sửa bản dịch xong render sẽ dùng cache cũ."""
+    assert StageName.TIMELINE_ASSEMBLY in STAGE_DEPENDENCIES[StageName.RENDER]
+    assert StageName.SUBTITLE in STAGE_DEPENDENCIES[StageName.RENDER]
+    assert StageName.RENDER in dependents_of(StageName.SUBTITLE)
+    assert StageName.RENDER in dependents_of(StageName.TIMELINE_ASSEMBLY)

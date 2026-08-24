@@ -1,14 +1,14 @@
 """Đăng ký toàn bộ 18 stage vào registry.
 
 Đã implement thật: ingest, analyze, separate, stt, segment_plan, translate,
-duration_fit, tts, forced_align, timeline_assembly, subtitle, render, qc.
+duration_fit, tts, forced_align, timeline_assembly, subtitle, compose, render, qc.
 Các stage còn lại là NotImplementedStage giữ đúng contract — harness chạy hết
 pipeline mà không sập, và mỗi stub ghi rõ nó thuộc phase nào theo lộ trình §20.
 
 `render` phụ thuộc COMPOSE trong dependency graph (§11.3) nhưng KHÔNG gọi
-compose — nó tự lấy voice track/subtitle/source trực tiếp từ DB và storage
-theo quy ước cố định, đúng nguyên tắc "stage không gọi stage khác" (§11.1).
-Compose vẫn là stub vì branding (logo/CTA/intro-outro) là Phase 2.
+compose — nó tự kiểm tra composed.mp4 có tồn tại theo quy ước đường dẫn cố
+định hay không, đúng nguyên tắc "stage không gọi stage khác" (§11.1). compose
+chỉ áp logo/watermark (Phase 1 tối thiểu); CTA/intro-outro động vẫn là Phase 2.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from core.stage import NotImplementedStage, register, registry
 from core.types import StageName
 from workers.analyzer.stage import AnalyzeStage
 from workers.audio.stage import SeparateStage
+from workers.compose.stage import ComposeStage
 from workers.duration_fit.stage import DurationFitStage
 from workers.forced_align.stage import ForcedAlignStage
 from workers.ingest.stage import IngestStage
@@ -34,7 +35,6 @@ _PLANNED_PHASE: dict[StageName, str] = {
     StageName.DIARIZE: "Phase 2",
     StageName.ONSCREEN_TEXT: "Phase 6",
     StageName.LIPSYNC: "Phase 6",
-    StageName.COMPOSE: "Phase 2",
     StageName.PUBLISH: "Phase 5",
 }
 
@@ -43,6 +43,7 @@ def register_all() -> None:
     register(IngestStage())
     register(AnalyzeStage())
     register(SeparateStage())
+    register(ComposeStage())
     register(STTStage())
     register(SegmentPlanStage())
     register(TranslateStage())

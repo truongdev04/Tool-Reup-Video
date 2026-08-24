@@ -1,8 +1,8 @@
 """Stage `render` — docs §6.15, §9.
 
-MVP Phase 1: mux video gốc (giữ nguyên hình, không crop/reframe/branding — đó
-là §6.14 Composition, Phase 2) với audio đã tái dựng (§9: TTS + background gốc,
-chuẩn hoá loudness) và burn phụ đề. Encode bằng VideoToolbox (§13.1).
+Mux video (đã có logo nếu `compose` chạy trước, xem `_pick_video_source`) với
+audio đã tái dựng (§9: TTS + background gốc, chuẩn hoá loudness) và burn phụ
+đề. Encode bằng VideoToolbox (§13.1).
 
 Filter graph dựng bằng FilterGraph builder, không nối chuỗi string (§6.15).
 """
@@ -69,7 +69,7 @@ class RenderStage(Stage):
         if not srt_path.exists():
             raise NonRetryableError("chưa có file phụ đề — chạy stage subtitle trước")
 
-        video_path = ctx.storage.root / source.storage_path
+        video_path = self._pick_video_source(ctx, source)
         voice_path = ctx.storage.root / assembled.storage_path
 
         # Cùng thư mục với voice.wav (ASSEMBLED) — đây vẫn là audio trung gian
@@ -114,6 +114,15 @@ class RenderStage(Stage):
                 "resolution": f"{info.width}x{info.height}",
             },
         )
+
+    def _pick_video_source(self, ctx: StageContext, source: SourceVideo) -> Path:
+        """Ưu tiên video đã composite (logo/watermark) nếu `compose` đã chạy
+        thật; fallback về video gốc nếu compose còn là stub hoặc brand không
+        có logo (§11.1: quy ước đường dẫn cố định, không qua output_ref)."""
+        composed = ctx.storage.path_for(
+            ArtifactKind.COMPOSED, project_id=ctx.project_id, filename="composed.mp4"
+        )
+        return composed if composed.exists() else ctx.storage.root / source.storage_path
 
     def _save_output_file(self, ctx: StageContext, path: Path, duration_ms: int) -> None:
         """Idempotent (§11.1): thay bản ghi FINAL cũ của job này."""

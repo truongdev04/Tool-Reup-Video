@@ -76,9 +76,9 @@ queue, QC review, publishing calendar...). Code nằm ở `apps/api/api/`.
 
 ## Trạng thái
 
-Pipeline chạy thật **từ ingest tới qc** — xuất video cuối cùng có giọng lồng
-tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên, và có bộ kiểm tra tự động
-trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** lần đầu,
+Pipeline chạy thật **từ ingest tới qc** — xuất video cuối cùng có logo/watermark,
+giọng lồng tiếng, phụ đề burn cứng, nhạc nền gốc còn nguyên, và có bộ kiểm tra
+tự động trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** lần đầu,
 **~0,05s** khi dùng cache (ngân sách DoD §21 là 2 phút).
 
 | Stage | Trạng thái | Công nghệ |
@@ -94,13 +94,45 @@ trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** lần đầu,
 | `forced_align` | ✅ | STT lại trên audio TTS, xem "Forced alignment" bên dưới |
 | `timeline_assembly` | ✅ | đặt từng chunk vào đúng vị trí tuyệt đối (§9) |
 | `subtitle` | ✅ | cắt cue theo CPS/số dòng, xuất SRT (§6.11) |
+| `compose` | ✅ | logo/watermark, tự sinh brand demo nếu chưa có (§6.14) |
 | `render` | ✅ | trộn voice+background, loudnorm 2 lượt, burn hardsub, encode VideoToolbox |
 | `qc` | ✅ | 10 check tự động, xem "QC" bên dưới |
-| `diarize`, `onscreen_text`, `lipsync`, `compose`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
+| `diarize`, `onscreen_text`, `lipsync`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
 
 Nền tảng Phase 0: 23 bảng data model (§10), stage contract (§11.1),
 orchestrator có cache/retry/partial re-run (§11.3, §16), storage layout (§12),
-harness (§21). **136 test.**
+harness (§21). **142 test.**
+
+## Compose — branding tối thiểu (§6.14)
+
+Áp logo/watermark lên video, KHÔNG phụ thuộc locale (branding giống nhau cho
+mọi bản ngôn ngữ) nên chạy một lần rồi mọi job dùng chung
+(`CacheScope.SOURCE`, `services/compose_video.py`).
+
+Chưa có brand asset thật? `compose` tự sinh một **brand placeholder** (logo
+chữ tổng hợp qua ffmpeg lavfi, `BrandProfile.is_placeholder=True`) và gán vào
+`Project.brand_profile_id` — để trục "1 video → nhiều bản có thương hiệu" chạy
+được đầu-cuối ngay cả khi chưa ai tạo brand qua dashboard thật. Gán một
+`BrandProfile` thật (logo/vị trí/độ mờ riêng) cho project thì compose dùng
+brand đó thay vì tự sinh.
+
+CTA động và intro/outro vẫn là Phase 2 — compose hiện chỉ làm phần tối thiểu
+để có kết quả nhìn thấy được (logo trên mọi frame).
+
+### Lỗi cache phát hiện khi nối compose vào pipeline
+
+`STAGE_DEPENDENCIES[COMPOSE]` từ Phase 0 (theo đúng sơ đồ trong kế hoạch) trỏ
+tới `timeline_assembly`/`subtitle`/`onscreen_text`/`lipsync`. Nhưng compose
+THẬT chỉ áp logo lên video gốc, không đọc dữ liệu của các stage đó — vì hai
+stage kia là JOB-scoped (khác nhau theo locale), cache key của compose bị
+"nhiễm" theo locale dù bản thân nó không dùng dữ liệu ấy, khiến
+`CacheScope.SOURCE` vô nghĩa: locale thứ hai vẫn phải composite lại từ đầu.
+
+Sửa: `COMPOSE` không còn phụ thuộc gì trong dependency graph; `RENDER` khai
+báo trực tiếp cả `TIMELINE_ASSEMBLY` và `SUBTITLE` (trước đây dựa vào COMPOSE
+"mang hộ" hai phụ thuộc đó — không còn đúng nữa vì compose đã được tách ra).
+Có test chặn hồi quy (`test_compose_khong_phu_thuoc_cac_stage_theo_locale`,
+`test_render_phu_thuoc_truc_tiep_khong_qua_trung_gian_compose`).
 
 ## QC — 10 check tự động (§15)
 
@@ -228,9 +260,9 @@ chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift.
 
 ### Việc tiếp theo
 
-Trục Phase 1 + qc đã xong (ingest → qc). Còn lại là các module Phase 2+:
+Trục Phase 1 + compose tối thiểu + qc đã xong (ingest → qc). Còn lại:
 `diarize` (speaker profile — cần quyết định provider, pyannote yêu cầu chấp
-nhận điều khoản HuggingFace), `compose` (branding/CTA/intro-outro — cần asset
-thương hiệu thật để demo), `publish` (OAuth từng nền tảng, Phase 5),
+nhận điều khoản HuggingFace), CTA động/intro-outro (compose Phase 2 đầy đủ —
+cần asset thương hiệu thật), `publish` (OAuth từng nền tảng, Phase 5),
 `onscreen_text`/`lipsync` (Phase 6 — xem quyết định #1 ở dưới). Quyết định còn
 mở: [docs/decisions.md](docs/decisions.md).

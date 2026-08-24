@@ -24,6 +24,7 @@ RETENTION_DAYS: dict[ArtifactKind, int | None] = {
     ArtifactKind.TRANSCRIPT: None,
     ArtifactKind.TRANSLATION: None,
     ArtifactKind.SEPARATED: 30,
+    ArtifactKind.COMPOSED: 30,
     ArtifactKind.TTS: 30,
     ArtifactKind.ASSEMBLED: 30,
     ArtifactKind.SUBTITLE: None,
@@ -36,6 +37,7 @@ _PROJECT_LEVEL = {
     ArtifactKind.SOURCE: Path("source"),
     ArtifactKind.ANALYSIS: Path("analysis"),
     ArtifactKind.SEPARATED: Path("audio/separated"),
+    ArtifactKind.COMPOSED: Path("composed"),
     ArtifactKind.TRANSCRIPT: Path("transcript"),
 }
 
