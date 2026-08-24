@@ -17,13 +17,14 @@ from sqlalchemy import select
 
 from core.stage import NonRetryableError, Stage, StageContext, StageResult
 from core.types import FitStrategy, StageName
-from db.models import ApiUsage, SegmentTiming, Translation, TranslationUnit, TTSChunk
+from db.models import ApiUsage, SegmentTiming, Speaker, Translation, TranslationUnit, TTSChunk
 from services.presets import effective_speech_rate
 from services.tts.adapters import apply_tempo
-from services.tts.base import SynthesisRequest, TTSError
+from services.tts.base import SynthesisRequest, TTSError, TTSProvider
 from services.tts.registry import TTSProviderNotFound, get_tts
 from workers.duration_fit.fitter import FitInput, decide
 from workers.duration_fit.stage import policy_from, silence_after
+from workers.tts.voice_assignment import SpeakerInfo, resolve_voice_assignment
 
 
 def _tts_provider_id(ctx: StageContext) -> str:
@@ -45,18 +46,73 @@ class TTSStage(Stage):
 
     def cache_params(self, ctx: StageContext) -> dict[str, Any]:
         """Giọng và provider PHẢI vào cache key: đổi giọng mà key không đổi thì
-        cache trả về audio của giọng cũ (§16)."""
+        cache trả về audio của giọng cũ (§16).
+
+        `voice_assignment` (speaker -> voice) là dữ liệu RIÊNG của stage này —
+        không đi qua stage nào khác nên không được chuỗi upstream nào "mang
+        hộ" (xem caching.md mục 4): đổi voice phụ trong config provider, hoặc
+        người dùng sửa `Speaker.voice_mapping` thủ công, phải tự bump cache
+        key ở đây.
+        """
         provider = self._provider(ctx)
         try:
             voice = provider.config.voice_for(ctx.locale)
         except TTSError:
             voice = None
+        assignment = self._voice_assignment(ctx, provider, persist=False)
         return {
             "locale": ctx.locale,
             "tts_provider": provider.id,
             "tts_version": provider.version,
             "voice": voice,
+            "voice_assignment": sorted(assignment.items()),
         }
+
+    def _voice_assignment(
+        self, ctx: StageContext, provider: TTSProvider, *, persist: bool,
+    ) -> dict[str, str]:
+        """speaker_id -> voice cho MỌI speaker xuất hiện trong job này (§6.5, §6.9).
+
+        `persist=True` (chỉ gọi từ `run()`) ghi lại giá trị tự động gán vào
+        `Speaker.voice_mapping[ctx.locale]` — CHỈ điền chỗ trống, không ghi đè
+        giá trị người dùng đã set thủ công, để lần chạy sau đọc lại đúng giá
+        trị đó qua `manual_voice` (idempotent, §11.1).
+        """
+        speaker_ids = {
+            sid for (sid,) in ctx.session.execute(
+                select(TranslationUnit.speaker_id).where(
+                    TranslationUnit.render_job_id == ctx.job_id,
+                    TranslationUnit.speaker_id.is_not(None),
+                )
+            ).all()
+        }
+        if not speaker_ids:
+            return {}
+
+        speakers = ctx.session.scalars(
+            select(Speaker).where(Speaker.id.in_(speaker_ids))
+        ).all()
+        try:
+            default_voice = provider.config.voice_for(ctx.locale)
+        except TTSError:
+            return {}
+        alt_voices = provider.config.alt_voices_for(ctx.locale)
+
+        infos = [
+            SpeakerInfo(id=sp.id, label=sp.label, manual_voice=(sp.voice_mapping or {}).get(ctx.locale))
+            for sp in speakers
+        ]
+        assignment = resolve_voice_assignment(infos, default_voice=default_voice, alt_voices=alt_voices)
+
+        if persist:
+            by_id = {sp.id: sp for sp in speakers}
+            for sid, voice in assignment.items():
+                sp = by_id[sid]
+                if ctx.locale not in (sp.voice_mapping or {}):
+                    sp.voice_mapping = {**(sp.voice_mapping or {}), ctx.locale: voice}
+            ctx.session.flush()
+
+        return assignment
 
     def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
         provider = self._provider(ctx)
@@ -72,6 +128,7 @@ class TTSStage(Stage):
             raise NonRetryableError("chưa có translation_units — chạy segment_plan trước")
 
         self._clear_previous(ctx, [u.id for u in units])
+        voice_by_speaker = self._voice_assignment(ctx, provider, persist=True)
 
         cumulative = 0
         total_chars = 0
@@ -100,7 +157,8 @@ class TTSStage(Stage):
             try:
                 result = provider.synthesize(
                     SynthesisRequest(
-                        text=translation.text, locale=ctx.locale, out_path=out_path
+                        text=translation.text, locale=ctx.locale, out_path=out_path,
+                        voice=voice_by_speaker.get(unit.speaker_id),
                     )
                 )
             except TTSError as exc:
@@ -192,6 +250,8 @@ class TTSStage(Stage):
                 "strategies": strategies,
                 "tempo_applied": tempo_applied,
                 "needs_manual_review": needs_review,
+                "speakers": len(voice_by_speaker),
+                "distinct_voices": len(set(voice_by_speaker.values())),
             },
             usage={"characters": total_chars},
             needs_review=needs_review > 0 or over_budget,

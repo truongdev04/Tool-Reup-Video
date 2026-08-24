@@ -12,5 +12,11 @@
     "es-ES": "nova",
     "ja-JP": "shimmer",
     "vi-VN": "alloy"
+  },
+  "speaker_voices": {
+    "en-US": ["echo", "onyx", "fable"],
+    "es-ES": ["echo", "onyx", "fable"],
+    "ja-JP": ["echo", "onyx", "fable"],
+    "vi-VN": ["echo", "onyx", "fable"]
   }
 }

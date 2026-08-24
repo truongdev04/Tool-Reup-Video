@@ -19,6 +19,10 @@
     "ko-KR": "Yuna",
     "zh-CN": "Tingting"
   },
+  "speaker_voices": {
+    "en-US": ["Fred", "Kathy", "Ralph"],
+    "fr-FR": ["Jacques"]
+  },
   "speech_rate_cps": {
     "en-US": 18.7,
     "es-ES": 19.93,

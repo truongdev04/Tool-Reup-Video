@@ -53,6 +53,12 @@ class TTSConfig:
     api_key_env: str | None = None
     #: locale -> id giọng của provider. Không hard-code trong source (§2.2).
     voices: dict[str, str] = field(default_factory=dict)
+    #: locale -> danh sách giọng PHỤ, dùng cho speaker thứ 2 trở đi khi
+    #: `diarize` (§6.5) gán được nhiều người nói cho cùng video. Rỗng = mọi
+    #: speaker dùng chung `voices[locale]` như trước khi có diarize — không
+    #: phải lỗi, chỉ là chưa cấu hình thêm giọng cho provider này (xem
+    #: `workers/tts/voice_assignment.py`).
+    speaker_voices: dict[str, list[str]] = field(default_factory=dict)
     #: Tốc độ đọc gốc, provider tự hiểu đơn vị (say dùng words/phút).
     default_rate: float | None = None
     #: locale -> số ký tự đọc được mỗi giây, ĐO THỰC TẾ từ chính provider này.
@@ -112,6 +118,19 @@ class TTSConfig:
             if key.split("-", 1)[0].lower() == lang:
                 return voice
         raise VoiceNotAvailable(self.id, locale, sorted(self.voices))
+
+    def alt_voices_for(self, locale: str) -> list[str]:
+        """Giọng PHỤ cho locale (speaker thứ 2 trở đi) — cùng luật khớp với
+        `voice_for`: khớp đầy đủ trước, rồi theo mã ngôn ngữ. Rỗng nếu provider
+        chưa cấu hình giọng phụ cho locale này (không raise — đây là tuỳ chọn,
+        không phải bắt buộc như `voice_for`)."""
+        if locale in self.speaker_voices:
+            return self.speaker_voices[locale]
+        lang = locale.split("-", 1)[0].lower()
+        for key, alts in self.speaker_voices.items():
+            if key.split("-", 1)[0].lower() == lang:
+                return alts
+        return []
 
 
 @dataclass
