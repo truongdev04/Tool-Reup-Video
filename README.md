@@ -47,7 +47,11 @@ brew install python@3.12 ffmpeg-full
 python3.12 -m venv .venv
 .venv/bin/pip install -e "apps/api[dev]"
 
-# Chạy pipeline trên clip mẫu 10s, 2 locale
+# Xem pipeline chạy trên trình duyệt (dev viewer — KHÔNG phải dashboard Phase 4)
+VLA_DEV_FAST=1 .venv/bin/uvicorn api.main:app --app-dir apps/api --port 8787 --reload
+# mở http://localhost:8787
+
+# Hoặc chạy thẳng qua CLI trên clip mẫu 10s, 2 locale
 .venv/bin/python scripts/run_pipeline.py
 
 # Chạy lại 1 stage và mọi stage phụ thuộc nó (partial re-run, docs §11.3)
@@ -56,6 +60,19 @@ python3.12 -m venv .venv
 # Test
 .venv/bin/python -m pytest apps/api/tests -q
 ```
+
+`VLA_DEV_FAST=1` dùng Whisper `base` thay vì `large-v3-turbo` — tải nhanh hơn
+nhiều, hợp cho việc xem thử. Bỏ biến này khi cần chất lượng transcript thật.
+
+### Dev viewer
+
+Trang tại `http://localhost:8787` cho phép: chọn locale đích, chọn provider
+dịch/TTS, chạy pipeline trên clip mẫu hoặc video tự tải lên, xem kết quả từng
+stage, xem bảng bản dịch kèm budget/drift, và nghe thử từng đoạn audio đã sinh.
+
+Đây là lớp mỏng dựng tạm để xem kết quả mà không phải đọc log terminal — 
+**không phải** dashboard Phase 4 thật (§19, sẽ là React/Next.js riêng với batch
+queue, QC review, publishing calendar...). Code nằm ở `apps/api/api/`.
 
 ## Trạng thái
 

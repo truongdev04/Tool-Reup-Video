@@ -238,7 +238,7 @@ class Orchestrator:
 
         return StageOutcome(
             stage=stage_name, status=JobStatus.FAILED, cached=False,
-            duration_ms=0, note=f"thất bại sau {self.max_retries + 1} lần: {last_error}",
+            duration_ms=0, note=f"thất bại sau {attempt} lần: {last_error}",
         )
 
     # -- chạy cả pipeline --------------------------------------------------

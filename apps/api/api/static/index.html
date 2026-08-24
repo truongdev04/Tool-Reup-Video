@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Tool Reup — Dev Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Tool Reup <span class="tag">dev viewer</span></h1>
+    <p class="sub">
+      Xem pipeline chạy trực tiếp. Đây <strong>không phải</strong> dashboard Phase 4
+      (§19, sẽ là React/Next.js) — chỉ là lớp mỏng chạy cục bộ để xem kết quả
+      thay vì đọc log terminal.
+    </p>
+  </header>
+
+  <section id="status-card" class="card">
+    <h2>Trạng thái môi trường</h2>
+    <div id="status-body">đang tải…</div>
+  </section>
+
+  <section class="card">
+    <h2>Chạy pipeline</h2>
+    <form id="run-form">
+      <div class="row">
+        <label>Nguồn video</label>
+        <div class="source-pick">
+          <label class="inline"><input type="radio" name="source" value="fixture" checked> Dùng clip mẫu (fixture 10s có tiếng nói)</label>
+          <label class="inline"><input type="radio" name="source" value="upload"> Tải video lên</label>
+          <input type="file" id="video-file" accept="video/*" disabled>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="source-locale">Ngôn ngữ nguồn</label>
+        <input type="text" id="source-locale" value="en-US">
+      </div>
+
+      <div class="row">
+        <label>Ngôn ngữ đích</label>
+        <div id="locale-checks" class="checks">đang tải…</div>
+      </div>
+
+      <div class="row two-col">
+        <div>
+          <label for="translation-provider">Provider dịch</label>
+          <select id="translation-provider"></select>
+        </div>
+        <div>
+          <label for="tts-provider">Provider TTS</label>
+          <select id="tts-provider"></select>
+        </div>
+      </div>
+
+      <button type="submit" id="run-btn">Chạy pipeline</button>
+      <span id="run-spinner" class="spinner hidden">Đang chạy… (có thể mất chục giây ở lần đầu do tải model)</span>
+    </form>
+
+    <div id="run-result"></div>
+  </section>
+
+  <section class="card">
+    <h2>Job gần đây</h2>
+    <button id="refresh-jobs" class="ghost">Làm mới</button>
+    <div id="jobs-list">chưa có job nào</div>
+  </section>
+
+  <section class="card hidden" id="detail-card">
+    <h2>Chi tiết job <span id="detail-locale"></span></h2>
+    <div id="detail-body"></div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
