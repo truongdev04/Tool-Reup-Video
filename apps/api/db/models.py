@@ -49,6 +49,10 @@ class Project(Base, PKMixin, TimestampMixin):
     #: Preset mặc định, có thể override ở cấp job. Không hard-code (§2.2).
     default_presets: Mapped[dict] = mapped_column(JSON, default=dict)
     target_locales: Mapped[list] = mapped_column(JSON, default=list)
+    #: `ApprovalGate` -> bật/tắt, đọc bởi `services/approval_gates.ensure_gates`
+    #: lúc tạo job (§11.2). Thiếu key nào coi là tắt — project chạy tự động
+    #: hoàn toàn thì để rỗng, không phải liệt kê đủ 4 cổng = False.
+    approval_gates: Mapped[dict] = mapped_column(JSON, default=dict)
 
     source_videos: Mapped[list[SourceVideo]] = relationship(back_populates="project")
 

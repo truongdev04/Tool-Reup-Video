@@ -24,14 +24,26 @@ from core.stage import NonRetryableError, StageContext, StageResult, get_stage
 from core.types import (
     PIPELINE_ORDER,
     STAGE_DEPENDENCIES,
+    ApprovalGate,
     CacheScope,
     JobStatus,
     StageName,
 )
 from db.base import utcnow
-from db.models import ErrorLog, RenderJob, StageRun
+from db.models import ApprovalGateRecord, ErrorLog, RenderJob, StageRun
 
 log = logging.getLogger("vla.orchestrator")
+
+#: Stage nào xong thì cổng nào (nếu bật) chặn lại chờ duyệt trước khi qua
+#: stage kế tiếp (§11.2). Chỉ áp dụng trong `run_pipeline` — `rerun_from`
+#: (partial re-run, §11.3) là đường vận hành nội bộ, không đi qua gate: xem
+#: giới hạn này trong `.claude/rules/approval-gates.md`.
+GATE_AFTER_STAGE: dict[StageName, ApprovalGate] = {
+    StageName.STT: ApprovalGate.TRANSCRIPT,
+    StageName.TRANSLATE: ApprovalGate.TRANSLATION,
+    StageName.TIMELINE_ASSEMBLY: ApprovalGate.AUDIO,
+    StageName.QC: ApprovalGate.FINAL,
+}
 
 
 def dependents_of(stage: StageName) -> set[StageName]:
@@ -241,6 +253,30 @@ class Orchestrator:
             duration_ms=0, note=f"thất bại sau {attempt} lần: {last_error}",
         )
 
+    # -- approval gates (§11.2) ---------------------------------------------
+
+    def _pending_gate(self, stage_name: StageName) -> ApprovalGateRecord | None:
+        """Cổng đang chặn stage kế tiếp, hoặc None nếu không có/đã tắt/đã duyệt.
+
+        Thiếu bản ghi (job không đi qua `services.approval_gates.ensure_gates`,
+        vd. test dựng `Orchestrator` thẳng) coi như KHÔNG có cổng nào — mặc
+        định an toàn, không phá hành vi hiện có của mọi test/pipeline chưa
+        biết tới approval gates (cùng nguyên tắc "thiếu cấu hình thì bỏ qua"
+        của diarize/compose).
+        """
+        gate = GATE_AFTER_STAGE.get(stage_name)
+        if gate is None:
+            return None
+        record = self.ctx.session.scalars(
+            select(ApprovalGateRecord).where(
+                ApprovalGateRecord.render_job_id == self.ctx.job_id,
+                ApprovalGateRecord.gate == gate,
+            )
+        ).first()
+        if record is None or not record.is_enabled or record.approved_at is not None:
+            return None
+        return record
+
     # -- chạy cả pipeline --------------------------------------------------
 
     def run_pipeline(
@@ -251,6 +287,7 @@ class Orchestrator:
     ) -> PipelineReport:
         report = PipelineReport(job_id=self.ctx.job_id, locale=self.ctx.locale)
         job = self.ctx.session.get(RenderJob, self.ctx.job_id)
+        gate_pending = False
 
         for i, stage_name in enumerate(stages, start=1):
             if job:
@@ -268,7 +305,22 @@ class Orchestrator:
                     job.error_message = outcome.note
                 break
 
-        if job and report.ok:
+            gate = self._pending_gate(stage_name)
+            if gate is not None:
+                log.info(
+                    "job %s dừng ở cổng duyệt %s, chờ approved_by", self.ctx.job_id, gate.gate,
+                )
+                if job:
+                    job.status = JobStatus.NEEDS_REVIEW
+                gate_pending = True
+                break
+
+        # gate_pending: job đã cố ý dừng ở NEEDS_REVIEW chờ duyệt — không được
+        # ghi đè bằng SUCCEEDED/progress=1.0 ở dưới, vì pipeline CHƯA xong.
+        # Gọi lại run_pipeline() sau khi duyệt (services.approval_gates.approve)
+        # là cách "tiếp tục": mọi stage đã chạy cache-hit tức thì, chỉ chạy
+        # tiếp từ chỗ dừng.
+        if job and report.ok and not gate_pending:
             job.status = (
                 JobStatus.NEEDS_REVIEW
                 if any(o.status is JobStatus.NEEDS_REVIEW for o in report.outcomes)

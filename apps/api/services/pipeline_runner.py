@@ -14,6 +14,7 @@ from core.stage import StageContext
 from core.types import StageName
 from db.base import create_all, session_scope
 from db.models import Project, RenderJob
+from services.approval_gates import ensure_gates
 from services.storage import Storage
 from workers.ingest.stage import register_source
 from workers.registry import register_all
@@ -77,6 +78,9 @@ def run_for_video(
                 job = RenderJob(project_id=project.id, source_video_id=source.id, locale=locale)
                 session.add(job)
                 session.flush()
+            # idempotent (§11.1): an toàn gọi lại kể cả job đã có, chỉ tạo
+            # bản ghi cổng còn thiếu — không đụng cổng đã duyệt.
+            ensure_gates(session, render_job_id=job.id, config=project.approval_gates)
 
             ctx = StageContext(
                 session=session, job_id=job.id, project_id=project.id,

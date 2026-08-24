@@ -22,6 +22,7 @@ from services.presets import effective_speech_rate
 from services.tts.adapters import apply_tempo
 from services.tts.base import SynthesisRequest, TTSError, TTSProvider
 from services.tts.registry import TTSProviderNotFound, get_tts
+from services.voice_consent import ensure_voice_consent
 from workers.duration_fit.fitter import FitInput, decide
 from workers.duration_fit.stage import policy_from, silence_after
 from workers.tts.voice_assignment import SpeakerInfo, resolve_voice_assignment
@@ -114,6 +115,24 @@ class TTSStage(Stage):
 
         return assignment
 
+    def _enforce_voice_consent(
+        self, ctx: StageContext, provider: TTSProvider, voice_by_speaker: dict[str, str],
+    ) -> None:
+        """Chặn TTS nếu một giọng đang dùng là giọng nhân bản thiếu consent
+        hợp lệ (§18.2) — xem `services/voice_consent.py` cho điều kiện chặn.
+
+        Kiểm TRƯỚC vòng lặp synthesize, gộp mọi giọng sẽ dùng trong job này
+        (giọng theo speaker + giọng mặc định) — chặn sớm, không tốn công đọc
+        thoại rồi mới báo lỗi giữa chừng.
+        """
+        voices = set(voice_by_speaker.values())
+        try:
+            voices.add(provider.config.voice_for(ctx.locale))
+        except TTSError:
+            pass
+        for voice_id in voices:
+            ensure_voice_consent(ctx.session, provider=provider.id, voice_id=voice_id)
+
     def run(self, ctx: StageContext, stage_input: dict[str, Any]) -> StageResult:
         provider = self._provider(ctx)
         policy = policy_from(ctx)
@@ -129,6 +148,7 @@ class TTSStage(Stage):
 
         self._clear_previous(ctx, [u.id for u in units])
         voice_by_speaker = self._voice_assignment(ctx, provider, persist=True)
+        self._enforce_voice_consent(ctx, provider, voice_by_speaker)
 
         cumulative = 0
         total_chars = 0

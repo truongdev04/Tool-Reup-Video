@@ -4,94 +4,79 @@
 
 ## 1. Mục tiêu
 
-Hoàn thiện 4 phần còn thiếu của pipeline localization: stage `diarize`,
-multi-voice TTS, font fallback cho hardsub, và `compose` Phase 2 đầy đủ
-(logo+CTA+intro/outro) — theo kế hoạch v3 (§6.5, §6.9, §13.2, §6.14).
+Phase 2 (kế hoạch v3) đã xong hoàn toàn — xem mục 2. Đang làm Phase 3:
+approval gates (§11.2) + voice consent thực thi (§18.2), phần được người
+dùng chọn ưu tiên kế tiếp sau khi Phase 2 hoàn tất.
 
 ## 2. Những phần đã hoàn thành
 
-**Diarize (§6.5)** — `pyannote.audio`, tự bỏ qua (không `NonRetryableError`)
-khi thiếu thư viện/`HF_TOKEN` để không chặn pipeline của người chưa có token.
-- `workers/diarization/assign.py` (module thuần, gán speaker theo overlap),
-  `stage.py`; `services/diarization_pyannote.py` (backend I/O, lazy-import);
-  `core/config.py` (`Settings.diarization_*`); `.claude/rules/diarization.md`.
+**Phase 2 — đã xong, đã commit+push** (diarize §6.5, multi-voice TTS §6.9,
+font fallback §13.2/§14, compose §6.14 logo+CTA+intro/outro). Chi tiết từng
+phần: [.claude/rules/diarization.md](../rules/diarization.md),
+[.claude/rules/providers.md](../rules/providers.md),
+[.claude/rules/fonts.md](../rules/fonts.md),
+[.claude/rules/compose.md](../rules/compose.md).
 
-**Multi-voice TTS (§6.9)** — nối `Speaker.voice_mapping` vào `tts`, biến
-diarize thành có tác dụng thật lên audio.
-- `workers/tts/voice_assignment.py` (module thuần — speaker đầu tiên = giọng
-  mặc định, sau đó lấy từ pool phụ, giọng thủ công luôn thắng);
-  `services/tts/base.py` (`speaker_voices`, `alt_voices_for`); `workers/tts/
-  stage.py` (`_voice_assignment`, dùng chung cho `cache_params`+`run`);
-  `config/tts/macos_say.json` (en-US/fr-FR), `openai_tts.json` (mọi locale).
+**Approval gates + voice consent (§11.2, §18.2) — MỚI phiên này.** Chi tiết
+đầy đủ (kể cả giới hạn đã biết): [.claude/rules/approval-gates.md](../rules/approval-gates.md).
 
-**Font fallback cho hardsub (§13.2, §14)** — bundle 3 font Noto thật
-(Latin/JP/Arabic, OFL license, `apps/api/assets/fonts/`), nối vào filter
-`subtitles` (`fontsdir`/`force_style`) + QC đo glyph coverage thật.
-- `services/fonts.py` (`resolve()` — nguồn DUY NHẤT cho cả `render` và `qc`);
-  `services/qc_media.py::missing_glyphs()` (đọc `cmap` qua `fontTools`);
-  `workers/qc/checks.py::check_font_coverage()` (FAIL, không WARN);
-  `pyproject.toml` (+`fonttools`); `.claude/rules/fonts.md`.
-
-**Compose Phase 2 đầy đủ (§6.14)** — logo → CTA → nối intro/outro.
-- `services/compose_video.py` (+`overlay_cta`, `prepare_clip_for_concat`,
-  `concat_clips`); `services/branding.py` (mới —
-  `resolve_intro_outro_durations`, dùng chung `render`+`qc`);
-  `workers/compose/stage.py` viết lại; `services/storage.py`
-  (+`shared_dir()`); `services/ffmpeg.py` (+`escape_filter_value` dùng
-  chung); `.claude/rules/compose.md`.
-- **3 lỗi nghiêm trọng bắt được khi test bằng pipeline thật** (trích frame +
-  đo `volumedetect`, không chỉ đọc code):
-  1. `concat` từ chối nối do SAR lệch (`1:1` vs `18221:18225`) dù đã khớp
-     resolution/fps → sửa `setsar=1`, ép cả clip chính qua cùng filter chain.
-  2. **Audio/phụ đề lệch đồng bộ**: intro/outro làm video dài hơn audio (§9)
-     và SRT (§8.3) vốn chỉ tính theo timeline nội dung chính → giọng đọc phát
-     đè lên intro, outro bị `-shortest` cắt mất. Sửa: `render` dịch audio
-     (`adelay`+`apad`) và viết lại SRT dịch offset trước khi burn; `qc` cộng
-     offset vào `expected_duration_ms` và điểm lấy mẫu `background_retained`.
-  3. **Cache "gà và trứng"**: `compose` không override `cache_params` (brand
-     đổi mà cache không invalidate); sửa xong thì `cache_params` đọc
-     `project.brand_profile_id` TRƯỚC khi `run()` kịp tạo brand placeholder,
-     khiến job locale 2 tính ra cache key khác job 1 → compose chạy 2 lần
-     thay vì 1. Sửa: `cache_params()` tự gọi `_resolve_brand` (idempotent).
-- Tiện sửa 1 lỗi có sẵn: brand placeholder dùng chung mọi project nhưng lưu
-  theo `project_id` → `Storage.shared_dir()` (ngoài `projects/`), thêm
-  `storage/shared/` vào `.gitignore` (suýt commit nhầm asset runtime).
-
-**Git/GitHub**: thêm remote `origin` → `https://github.com/truongdev04/
-Tool-Reup-Video.git` (public), `git push -u origin main` thiết lập tracking.
-4 commit đã push (rules refactor, diarize, multi-voice TTS, font fallback).
+- `services/approval_gates.py` (mới) — `ensure_gates()`/`approve()`, thuần
+  đọc/ghi DB, idempotent.
+- `core/orchestrator.py` — `GATE_AFTER_STAGE` (STT→transcript,
+  TRANSLATE→translation, TIMELINE_ASSEMBLY→audio, QC→final),
+  `Orchestrator._pending_gate`, `run_pipeline` dừng đúng chỗ khi cổng bật mà
+  chưa duyệt (`job.status=NEEDS_REVIEW`, không ghi đè SUCCEEDED/progress=1.0).
+  Tiếp tục sau khi duyệt = gọi lại `run_pipeline()`, không cần method riêng
+  (mọi stage đã chạy cache-hit tức thì).
+- `db/models.py` — `Project.approval_gates` (JSON, gate→bool, mặc định rỗng
+  = tự động hoàn toàn).
+- `services/pipeline_runner.py` — gọi `ensure_gates()` khi tạo/lấy job, đọc
+  config từ `project.approval_gates`.
+- `services/voice_consent.py` (mới) — `ensure_voice_consent()`: tra bảng
+  `voices` theo `provider`+`provider_voice_id`, nếu `is_cloned=True` mà
+  thiếu `VoiceConsent` hợp lệ (`is_valid_at()`) thì `NonRetryableError`. Chưa
+  đăng ký = không chặn (không tự suy diễn is_cloned từ tên giọng).
+- `workers/tts/stage.py` — `TTSStage._enforce_voice_consent()` gọi trước
+  vòng lặp synthesize, gộp mọi voice (theo speaker + mặc định) kiểm 1 lần.
+- Test mới: `test_approval_gates.py` (12 test — service + orchestrator dùng
+  stage giả kiểu `test_cache_chain.py`), `test_voice_consent.py` (9 test).
+- **Mặc định an toàn**: job không đi qua `ensure_gates`/voice không đăng ký
+  trong bảng `voices` → không bị chặn gì — không phá bất kỳ test/luồng nào
+  đã có từ trước (212/212 test cũ vẫn pass nguyên).
 
 ## 3. Trạng thái hiện tại
 
-- **192/192 test pass** (`apps/api/tests`), pipeline chạy thật end-to-end
-  trên fixture 7s × 2 locale (es-ES, ja-JP): ~28s (DoD §21: 2 phút).
-- Đã xác nhận bằng mắt: intro/outro/CTA hiện đúng vị trí, đúng font Noto Sans
-  có dấu tiếng Việt, audio im lặng đúng trong intro/outro (-91dB) và có tiếng
-  trong nội dung chính, `compose` chỉ chạy 1 lần cho 2 locale (cache đúng).
+- **212/212 test pass** (`apps/api/tests`), pipeline thật vẫn chạy end-to-end
+  đúng ~29s trên fixture 2 locale sau khi đổi orchestrator (đã chạy lại xác
+  nhận bằng `scripts/run_pipeline.py`, gates mặc định tắt nên không có gì
+  đổi hành vi khi không cấu hình).
 - **Lỗi đã biết, KHÔNG phải mới**: QC `background_retained` FAIL trên
   es-ES — hạn chế của fixture tổng hợp (sine wave), không phải bug render.
-- **Chưa commit/push**: toàn bộ code compose Phase 2 (đã `git add`, chưa
-  commit) — diarize/multi-voice/font fallback đã commit+push từ trước.
-- **Chưa kích hoạt được trên pipeline thật** (chỉ test bằng mock/provider
-  giả): diarize + multi-voice TTS — máy này chưa cài `pyannote.audio`/chưa
-  có `HF_TOKEN` (hướng dẫn 3 bước ở README mục "Diarize (§6.5)").
-- Nợ kỹ thuật khác (chi tiết: `.claude/rules/tech-debt.md`): `forced_align`
-  xấp xỉ tuyến tính; `speech_rate_cps` chưa hiệu chuẩn cho `elevenlabs`/
-  `openai_tts`; `render` chưa áp `FitStrategy.VIDEO_STRETCH`; chưa có render
-  preset (§14, bitrate hard-code); `speaker_voices` chưa có cho `elevenlabs`;
-  font fallback mới phủ 5 locale hiện có; approval_gates/voice_consents có
-  bảng DB nhưng chưa stage nào dùng; CTA/intro-outro không dịch theo locale
-  (quyết định có chủ ý, giữ `compose.cache_scope=SOURCE`).
+- **Chưa commit/push**: toàn bộ code approval gates + voice consent phiên
+  này (đã sửa/tạo file, CHƯA `git add`/commit).
+- **Chưa kích hoạt được trên pipeline thật**: diarize + multi-voice TTS thật
+  (chỉ test bằng mock — máy này chưa có `HF_TOKEN`); approval gates/voice
+  consent cũng vậy — có test đầy đủ nhưng chưa từng bật gate thật trên một
+  lần chạy `scripts/run_pipeline.py` (chưa có API/CLI để set
+  `Project.approval_gates`/gọi `approve()` ngoài Python trực tiếp).
+- Nợ kỹ thuật khác (chi tiết: [.claude/rules/tech-debt.md](../rules/tech-debt.md)):
+  `forced_align` xấp xỉ tuyến tính; `speech_rate_cps` chưa hiệu chuẩn cho
+  `elevenlabs`/`openai_tts`; `render` chưa áp `FitStrategy.VIDEO_STRETCH`;
+  chưa có render preset (§14); `speaker_voices` chưa có cho `elevenlabs`;
+  dry-run cost estimate (§17.1) chưa có; `onscreen_text` vẫn stub; Phase 3
+  hạ tầng Celery/Redis chưa bắt đầu (đang chạy tuần tự trong 1 tiến trình).
 
 ## 4. Bước tiếp theo
 
-1. **Xác nhận commit/push code compose Phase 2** (đang chờ, đã `git add`).
-2. Chọn ưu tiên kế tiếp — Phase 2 của kế hoạch nay đã xong hoàn toàn:
-   Phase 3 (approval_gates + voice_consents thực thi, dry-run cost §17.1)
-   hay Phase 5 (`publish`, OAuth từng nền tảng)?
-3. Nếu người dùng lấy được `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`,
+1. **Xác nhận commit/push code approval gates + voice consent** (đang chờ,
+   chưa `git add`).
+2. Cân nhắc thêm CLI/script nhỏ để set `Project.approval_gates` và gọi
+   `approve()` mà không cần mở Python thủ công — hiện chỉ dùng được qua
+   test/script tự viết, chưa có đường vận hành thật.
+3. Chọn ưu tiên kế tiếp sau khi approval gates/voice consent ổn định — các
+   lựa chọn còn lại từ phiên trước vẫn mở: dry-run cost estimate (§17.1),
+   Phase 5 (`publish`, OAuth từng nền tảng), hoặc việc nhỏ nâng chất lượng
+   (hiệu chuẩn `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render preset).
+4. Nếu người dùng lấy được `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`,
    export `HF_TOKEN`, chạy lại `scripts/run_pipeline.py` để xác nhận diarize
    + multi-voice TTS chạy thật (hiện mới test bằng mock).
-4. Việc nhỏ hơn nếu cần nâng chất lượng: hiệu chuẩn `speech_rate_cps` cho
-   `elevenlabs`/`openai_tts`, thực thi `FitStrategy.VIDEO_STRETCH`, render
-   preset (§14).

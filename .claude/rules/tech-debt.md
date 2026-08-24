@@ -20,11 +20,13 @@
   [fonts.md](fonts.md). Chỉ bundle 3 family (Noto Sans/JP/Arabic) đủ cho 5
   locale hiện có; thêm locale hệ chữ mới (Hindi, Thái...) phải tải thêm font
   theo đúng quy trình trong `apps/api/assets/fonts/README.md`.
-- `ApprovalGateRecord`/`approval_gates` và `VoiceConsent`/`voice_consents`
-  (§11.2, §18.2) có bảng trong DB (Phase 0) nhưng KHÔNG có stage/API nào đọc
-  hay ghi — 4 cổng duyệt (transcript/translation/audio/final) không được thực
-  thi, và `tts` không chặn khi voice profile thiếu consent hợp lệ như plan
-  yêu cầu ("TTS chặn nếu voice profile không có consent hợp lệ", §18.2).
+- Approval gates + voice consent (§11.2, §18.2) đã thực thi — xem
+  [approval-gates.md](approval-gates.md). Còn thiếu: chưa có API/dashboard để
+  gọi `approve()`/đăng ký `Voice`/`VoiceConsent` (chỉ gọi được từ Python);
+  cổng `transcript` khoá theo `render_job_id` nên duyệt cho locale này không
+  tự duyệt cho locale khác của cùng source dù transcript dùng chung
+  (`cache_scope=SOURCE`); `rerun_from` (partial re-run) không đi qua gate
+  check.
 - Ước tính chi phí dry-run trước khi batch chạy (§17.1) chưa có — soft/hard
   limit (nếu có) chỉ chặn được *khi đang chạy*, không cảnh báo trước.
 - `onscreen_text` vẫn là `NotImplementedStage` — theo §15, `onscreen_text`
