@@ -58,3 +58,30 @@ def detect_black_segments(
     ):
         segments.append((float(m.group(1)), float(m.group(2))))
     return segments
+
+
+#: Không tính vào "thiếu glyph" — khoảng trắng, xuống dòng, dấu câu ASCII cơ
+#: bản gần như font nào cũng có, và thiếu chúng không phải lỗi font (§15).
+_SKIP_CHARS = set(" \t\n\r.,!?:;\"'()-–—…")
+
+
+def missing_glyphs(text: str, font_paths: list[Path]) -> set[str]:
+    """Ký tự trong `text` không có glyph ở BẤT KỲ font nào trong `font_paths`
+    (§13.2, §14: check_font_coverage) — đo thật bằng bảng `cmap` của font,
+    không đoán bằng mắt.
+
+    Font lỗi/không đọc được thì bị BỎ QUA (không tính là "phủ được") — nghiêng
+    về phía phát hiện thiếu, đúng nguyên tắc chung của QC (§16).
+    """
+    from fontTools.ttLib import TTFont
+
+    covered: set[int] = set()
+    for path in font_paths:
+        try:
+            font = TTFont(path, lazy=True)
+            for table in font["cmap"].tables:
+                covered.update(table.cmap.keys())
+        except Exception:  # noqa: BLE001 — font hỏng thì coi như không phủ, không chặn QC
+            continue
+
+    return {ch for ch in set(text) if ch not in _SKIP_CHARS and ord(ch) not in covered}

@@ -28,13 +28,15 @@ from db.models import (
 )
 from services.audio_mix import TARGET_I, measure_loudnorm
 from services.ffmpeg import probe
+from services.fonts import resolve as resolve_fonts
 from services.presets import load_locale
-from services.qc_media import detect_black_segments, mean_volume_db
+from services.qc_media import detect_black_segments, mean_volume_db, missing_glyphs
 from workers.qc.checks import (
     check_background_retained,
     check_cue_cps,
     check_cue_overlap,
     check_cumulative_drift,
+    check_font_coverage,
     check_forced_alignment_used,
     check_loudness,
     check_no_clipping,
@@ -105,6 +107,7 @@ class QCStage(Stage):
                 tempo_min=settings.tempo_min, tempo_max=settings.tempo_max,
             ),
             check_translation_completeness(len(units), len(translated_count)),
+            check_font_coverage(self._missing_glyphs(ctx, cues, preset.font_stack)),
             check_output_playable(
                 duration_ms=info.duration_ms, expected_duration_ms=expected_duration,
                 has_audio=info.has_audio, has_video=info.width is not None,
@@ -177,3 +180,15 @@ class QCStage(Stage):
             if best is None or (gap[1] - gap[0]) > (best[1] - best[0]):
                 best = gap
         return best
+
+    def _missing_glyphs(
+        self, ctx: StageContext, cues: list[SubtitleCue], font_stack: tuple[str, ...],
+    ) -> list[str]:
+        """Đo glyph coverage thật trên đúng font sẽ dùng để burn hardsub
+        (§13.2, §14) — cùng `services/fonts.py` mà `render` dùng, để QC không
+        kiểm tra một bộ font khác với bộ font thật sự lên hình."""
+        text = "".join("".join(cue.lines) for cue in cues)
+        if not text:
+            return []
+        fonts = resolve_fonts(font_stack, ctx.settings.fonts_dir)
+        return sorted(missing_glyphs(text, list(fonts.available.values())))

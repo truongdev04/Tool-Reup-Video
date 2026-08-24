@@ -20,18 +20,39 @@ from core.types import ArtifactKind, StageName
 from db.models import OutputFile, SourceVideo
 from services.audio_mix import loudnorm_two_pass, mix_voice_and_background
 from services.ffmpeg import FilterGraph, probe, run_ffmpeg
+from services.fonts import resolve as resolve_fonts
+from services.presets import load_locale
 
 #: Bitrate cố định cho MVP — chưa có render preset (§14) để chọn theo aspect
 #: ratio/resolution. Ghi nhận như nợ kỹ thuật, hợp lý để làm ở Phase 2.
 _VIDEO_BITRATE = "6000k"
 
 
-def _escape_for_subtitles_filter(path: Path) -> str:
+def _escape_for_subtitles_filter(value: Path | str) -> str:
     """ffmpeg filter `subtitles=` coi `:` là ký tự phân cách tham số và `\\`,
-    `'` có ý nghĩa escape riêng — phải thoát trước khi chèn vào filter graph."""
-    s = str(path)
+    `'` có ý nghĩa escape riêng — phải thoát trước khi chèn vào filter graph.
+    Dùng chung cho cả đường dẫn (`filename`, `fontsdir`) lẫn giá trị style
+    (`force_style`)."""
+    s = str(value)
     s = s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     return s
+
+
+def _subtitles_filter_expr(ctx: StageContext, srt_path: Path) -> str:
+    """Dựng filter `subtitles` kèm font fallback theo `font_stack` của locale
+    preset (§13.2, §14) — xem `services/fonts.py`. `font_stack` rỗng hoặc
+    chưa bundle font nào cho locale này thì bỏ qua `fontsdir`/`force_style`,
+    để libass tự chọn font như hành vi trước khi có tính năng này (không chặn
+    render vì thiếu font bundle)."""
+    preset = load_locale(ctx.locale)
+    fonts = resolve_fonts(preset.font_stack, ctx.settings.fonts_dir)
+
+    expr = f"subtitles='{_escape_for_subtitles_filter(srt_path)}'"
+    if fonts.available:
+        expr += f":fontsdir='{_escape_for_subtitles_filter(fonts.fonts_dir)}'"
+    if fonts.primary_family:
+        expr += f":force_style='{_escape_for_subtitles_filter(f'FontName={fonts.primary_family}')}'"
+    return expr
 
 
 class RenderStage(Stage):
@@ -84,11 +105,7 @@ class RenderStage(Stage):
         loudnorm_two_pass(mixed_path, normalized_path)
 
         graph = FilterGraph()
-        graph.add(
-            ["0:v"],
-            f"subtitles='{_escape_for_subtitles_filter(srt_path)}'",
-            ["vout"],
-        )
+        graph.add(["0:v"], _subtitles_filter_expr(ctx, srt_path), ["vout"])
 
         out_path = ctx.storage.path_for(
             ArtifactKind.FINAL, project_id=ctx.project_id, job_id=ctx.job_id,

@@ -18,6 +18,9 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
+    # Đọc bảng cmap của font đã bundle để đo glyph coverage cho hardsub
+    # (§13.2, §14) — xem services/fonts.py, services/qc_media.py.
+    "fonttools>=4.50",
 ]
 
 [project.optional-dependencies]

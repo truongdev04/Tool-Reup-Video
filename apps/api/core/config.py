@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     database_url: str = f"sqlite:///{_REPO_ROOT / 'vla.db'}"
     storage_root: Path = _REPO_ROOT / "storage"
+    #: Font Noto nhúng sẵn cho hardsub — không trông cậy font hệ thống, hành vi
+    #: phải giống nhau trên mọi máy chạy pipeline (docs §13.2, §14). Xem
+    #: `apps/api/assets/fonts/README.md`, `services/fonts.py`.
+    fonts_dir: Path = _REPO_ROOT / "apps/api/assets/fonts"
 
     #: Bump khi đổi logic pipeline theo cách làm output cũ không còn hợp lệ.
     #: Nằm trong cache key nên bump = vô hiệu hoá toàn bộ cache (docs §16).

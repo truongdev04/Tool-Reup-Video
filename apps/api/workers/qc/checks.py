@@ -180,6 +180,22 @@ def check_background_retained(gap_rms_db: float, *, floor_db: float = -50.0) -> 
     return _finding("background_retained", QCVerdict.PASS, f"nền còn nguyên ({gap_rms_db}dBFS)")
 
 
+def check_font_coverage(missing_chars: list[str]) -> QCFinding:
+    """Mọi ký tự trong subtitle phải có glyph trong font chain đã khai báo
+    (§13.2, §14, §15) — FAIL chứ không WARN: glyph thiếu là ô vuông nhìn thấy
+    ngay trên hình, không phải sai lệch nhỏ có thể chấp nhận như `cue_cps`
+    (xem lý do `cue_cps` chỉ WARN ở `check_cue_cps`, đây KHÔNG cùng tình huống
+    — thiếu glyph không có "chấp nhận được" nào)."""
+    if missing_chars:
+        preview = "".join(sorted(set(missing_chars))[:10])
+        return _finding(
+            "font_coverage", QCVerdict.FAIL,
+            f"{len(set(missing_chars))} ký tự không có glyph trong font đã khai "
+            f"(vd: {preview}) — sẽ hiện ô vuông trên hình",
+        )
+    return _finding("font_coverage", QCVerdict.PASS, "mọi ký tự đều có glyph")
+
+
 def overall_verdict(findings: list[QCFinding]) -> QCVerdict:
     """Tổng hợp: 1 FAIL -> FAIL cả job; không FAIL nhưng có WARN -> WARN;
     còn lại PASS. Chỉ publish khi = PASS (§15)."""

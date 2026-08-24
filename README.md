@@ -87,6 +87,7 @@ tự động trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** 
 | `analyze` | ✅ | ffprobe |
 | `separate` | ✅ | Demucs htdemucs trên MPS |
 | `stt` | ✅ | mlx-whisper (Metal), word timestamps |
+| `diarize` | ✅ | pyannote.audio — tự bỏ qua (không chặn pipeline) nếu thiếu thư viện/`HF_TOKEN` |
 | `segment_plan` | ✅ | logic thuần |
 | `translate` | ✅ | 8 provider, xem bên dưới |
 | `duration_fit` | ✅ | dự báo từ độ dài bản dịch (§7) |
@@ -95,9 +96,9 @@ tự động trước khi cho publish (§15). Clip mẫu 7s, 2 locale: **~22s** 
 | `timeline_assembly` | ✅ | đặt từng chunk vào đúng vị trí tuyệt đối (§9) |
 | `subtitle` | ✅ | cắt cue theo CPS/số dòng, xuất SRT (§6.11) |
 | `compose` | ✅ | logo/watermark, tự sinh brand demo nếu chưa có (§6.14) |
-| `render` | ✅ | trộn voice+background, loudnorm 2 lượt, burn hardsub, encode VideoToolbox |
+| `render` | ✅ | trộn voice+background, loudnorm 2 lượt, burn hardsub (font Noto bundle theo `font_stack`, xem `.claude/rules/fonts.md`), encode VideoToolbox |
 | `qc` | ✅ | 10 check tự động, xem "QC" bên dưới |
-| `diarize`, `onscreen_text`, `lipsync`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
+| `onscreen_text`, `lipsync`, `publish` | ⬜ | stub giữ đúng contract, xem lộ trình §20 |
 
 Nền tảng Phase 0: 23 bảng data model (§10), stage contract (§11.1),
 orchestrator có cache/retry/partial re-run (§11.3, §16), storage layout (§12),
@@ -258,11 +259,32 @@ chưa đo từ TTS thật. Sai số ở đây đẩy thẳng vào drift.
 `scripts/calibrate_speech_rate.py`). Đổi provider TTS thì phải đo lại — tốc độ
 đọc phụ thuộc provider, không chỉ phụ thuộc ngôn ngữ.
 
+### Diarize (§6.5)
+
+Backend đã chốt: `pyannote.audio` (`pyannote/speaker-diarization-3.1`), xem
+`.claude/rules/diarization.md` cho chi tiết thiết kế. Model này **gated** trên
+HuggingFace — cần:
+
+1. `.venv/bin/pip install pyannote.audio` (không có sẵn trong `pyproject.toml`
+   mặc định — nặng, kéo theo torch/lightning/speechbrain).
+2. Chấp nhận điều khoản trên trang model + trang `pyannote/segmentation-3.0`
+   (pipeline tải ngầm bên trong):
+   https://huggingface.co/pyannote/speaker-diarization-3.1
+   https://huggingface.co/pyannote/segmentation-3.0
+3. Tạo access token (quyền đọc là đủ) tại
+   https://huggingface.co/settings/tokens, đặt vào biến môi trường `HF_TOKEN`.
+
+Thiếu 1 trong 3 điều kiện trên, stage **tự bỏ qua** (không chặn pipeline, xem
+lý do trong rule file) — `speaker_id` giữ nguyên `None` như hành vi cũ. Chưa
+làm: map `Speaker` → giọng TTS theo `speaker_id` (`TTSStage` hiện chỉ đọc một
+giọng cho cả locale, chưa phân biệt người nói — xem mục "Nợ kỹ thuật" trong
+rule file).
+
 ### Việc tiếp theo
 
-Trục Phase 1 + compose tối thiểu + qc đã xong (ingest → qc). Còn lại:
-`diarize` (speaker profile — cần quyết định provider, pyannote yêu cầu chấp
-nhận điều khoản HuggingFace), CTA động/intro-outro (compose Phase 2 đầy đủ —
-cần asset thương hiệu thật), `publish` (OAuth từng nền tảng, Phase 5),
-`onscreen_text`/`lipsync` (Phase 6 — xem quyết định #1 ở dưới). Quyết định còn
-mở: [docs/decisions.md](docs/decisions.md).
+Trục Phase 1 + compose tối thiểu + qc + diarize + multi-voice TTS + font
+fallback đã xong (ingest → qc). Còn lại: CTA động/intro-outro (compose Phase 2
+đầy đủ — cần asset thương hiệu thật), `publish` (OAuth từng nền tảng, Phase 5),
+`onscreen_text`/`lipsync` (Phase 6 — xem quyết định #1 ở dưới), approval
+gates + voice consents thực thi (§11.2, §18.2), dry-run cost estimate (§17.1).
+Quyết định còn mở: [docs/decisions.md](docs/decisions.md).
