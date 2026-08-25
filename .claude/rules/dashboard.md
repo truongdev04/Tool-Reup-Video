@@ -9,8 +9,9 @@ Hai phần tách biệt, cố ý không gộp:
   là phần §19 nói tới.
 
 Lượt đầu (§19 "vòng vận hành lõi"): Projects, Video Workspace, Batch Queue,
-QC Review (lồng trong Video Workspace). Publishing Calendar và Settings để
-lượt sau — xem [tech-debt.md](tech-debt.md).
+QC Review (lồng trong Video Workspace). Publishing Calendar
+([publishing.md](publishing.md)) và Settings (mục dưới) đã làm ở các lượt
+sau.
 
 ## Backend — `apps/api/api/routes/dashboard.py`
 
@@ -66,6 +67,33 @@ thẳng từ trình duyệt qua `src/lib/api.ts` — không SSR, không server a
 Không có codegen kiểu OpenAPI → TypeScript: sửa route ở
 `dashboard.py` thì phải tự sửa type khớp trong `api.ts`. Chi tiết chạy/cấu
 trúc: `apps/web/README.md`.
+
+## Settings — `apps/api/api/routes/settings.py` (READ-ONLY)
+
+Quyết định phạm vi có chủ ý (hỏi người dùng trước khi làm): trang Settings
+CHỈ hiện trạng thái, KHÔNG cho sửa gì qua UI. Ba mảnh trong tech-debt.md có
+mức sẵn sàng khác nhau:
+
+- **API key provider** (translation/TTS): [providers.md](providers.md) đã
+  quy định "chỉ đọc từ biến môi trường tại thời điểm gọi, không lưu DB" —
+  route chỉ trả `is_configured`/`api_key_env` (TÊN biến, không phải GIÁ TRỊ),
+  không có ô nhập key nào. `test_khong_lo_api_key_that_ra_response` khoá lại
+  ràng buộc này bằng cách set biến môi trường giả rồi assert giá trị đó
+  không xuất hiện trong JSON response.
+- **Concurrency**: chưa có field nào để hiện — không có cơ chế giới hạn "số
+  job chạy song song" trong code (`scripts/worker.py` luôn `--pool=solo`,
+  xem [infra.md](infra.md)). Cố tình không bịa field giả.
+- **Retention**: hiện đúng `services/storage.py::RETENTION_DAYS` (không hard-
+  code lại số trong route) nhưng chỉ để xem — không có tiến trình purge nào
+  đọc dict đó (xem [tech-debt.md](tech-debt.md)), nên sửa qua UI cũng vô
+  nghĩa cho tới khi có purge job thật.
+
+Cũng hiện: kết quả `Settings.verify_ffmpeg()`, danh sách publishing platform
+(`services/publishing/registry`), model + trạng thái `HF_TOKEN` của diarize
+([diarization.md](diarization.md)), ngưỡng duration-fit/QC
+([duration-fitting.md](duration-fitting.md)), và
+`token_encryption_key_configured` ([publishing.md](publishing.md)) — luôn là
+cờ boolean, không bao giờ là giá trị secret thật.
 
 ## Giới hạn đã biết
 

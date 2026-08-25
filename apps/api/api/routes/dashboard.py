@@ -5,7 +5,8 @@ mục đích khác nhau, cố ý không gộp.
 
 Lượt này (§19, "vòng vận hành lõi"): Projects, Video Workspace (xem + sửa
 inline translation, drift timeline, QC, approval gate), Batch Queue.
-Publishing Calendar và Settings để lượt sau.
+Publishing Calendar (`api/routes/publishing.py`) và Settings (READ-ONLY,
+`api/routes/settings.py`) đã làm ở các lượt sau.
 """
 
 from __future__ import annotations

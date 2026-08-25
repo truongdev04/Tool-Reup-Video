@@ -4,82 +4,102 @@
 
 ## 1. Mục tiêu
 
-Theo roadmap §20: Phase 0–4 xong hoàn toàn (Phase 4 còn thiếu mỗi Settings).
-Phase 5 (Publishing) — "scaffold đầy đủ + mock provider" theo lựa chọn của
-người dùng — đã xong: kiến trúc OAuth/quota/publish đầy đủ, test bằng
-provider `mock` (không gọi YouTube/TikTok/Instagram thật, vì cần app OAuth
-thật do người dùng tự đăng ký — chưa làm lượt này).
+Hoàn thiện roadmap §20 từ Phase 2 (compose) tới Phase 5 (publishing) —
+approval gates, hạ tầng Celery/Redis, dashboard Phase 4, và publishing.
 
 ## 2. Những phần đã hoàn thành
 
-**Phase 0–4 — đã xong, đã commit (LOCAL, chưa push theo yêu cầu).** Chi
-tiết: [.claude/rules/dashboard.md](../rules/dashboard.md),
-[.claude/rules/infra.md](../rules/infra.md).
+**Compose Phase 2** (commit `3aa819c`, đã push) — logo→CTA→intro/outro,
+sửa lỗi SAR concat, đồng bộ audio/subtitle với intro/outro, cache
+"gà-trứng" của brand. `services/compose_video.py`, `services/branding.py`,
+`workers/compose/stage.py`.
 
-**Publishing / Phase 5 (§6.17, §18.1, §18.3, §20) — MỚI phiên này.** Chi
-tiết đầy đủ: [.claude/rules/publishing.md](../rules/publishing.md).
+**Approval gates + voice consent §11.2/§18.2** (commit `4cd3801`, `07b0739`,
+đã push) — `services/approval_gates.py`, `services/voice_consent.py`,
+`core/orchestrator.py::GATE_AFTER_STAGE`/`_pending_gate`, `Project.approval_gates`,
+`workers/tts/stage.py::_enforce_voice_consent`. CLI `scripts/manage_gates.py`
+(list/set-project/set-job/approve/resume) + `pipeline_runner.py::resume_job`/
+`rerun_stages_for_job`. Sửa lỗ hổng `RenderJob.presets` chưa từng được ghi.
 
-- `services/publishing/` (base/adapters/registry/quota) — config-driven
-  đúng mẫu translation/TTS, chỉ có provider `mock` (chủ ý, theo lựa chọn
-  scope của người dùng). `config/publishing/mock.json` dùng ĐÚNG số quota
-  thật của YouTube (10000/1600 ≈ 6 video/ngày) dù không gọi mạng thật.
-- `db/models.py::PlatformAccount` (token mã hoá qua `services/crypto.py`,
-  Fernet) — bảng thứ 24 (`test_du_24_bang`).
-- `workers/publishing/stage.py::PublishStage` — nối thật vào
-  `PIPELINE_ORDER` (không còn `NotImplementedStage`). Chặn đúng thứ tự: QC
-  phải PASS → account phải hợp lệ (tự refresh nếu hết hạn còn refresh_token)
-  → còn quota hôm nay → mới publish thật, ghi `PublishingJob`, set
-  `ai_disclosure=True`.
-- `api/routes/publishing.py` — OAuth 3-legged THẬT (authorize→consent→
-  callback, state CSRF chống replay), accounts/revoke, quota/history,
-  publish-job. `mock` provider tự đóng vai "authorization server" (trang
-  HTML riêng) nhưng đi qua đúng cơ chế redirect như nền tảng thật.
-- Frontend: trang `/publish` (Publishing Calendar — kết nối account, quota,
-  lịch sử) + `PublishPanel` nhúng vào Video Workspace (`/jobs/[id]`).
-- **Bug thật bắt được khi test qua HTTP thật (không lộ ở unit test cùng
-  session)**: SQLite đọc lại `DateTime(timezone=True)` qua session MỚI mất
-  tzinfo → so sánh với `datetime.now(UTC)` ném `TypeError`. Sửa bằng
-  `db/base.py::UTCDateTime` (TypeDecorator) áp cho MỌI cột datetime trong
-  `db/models.py`, không chỉ chỗ vừa lộ ra — có test round-trip 2-session
-  khoá lại fix (`test_utc_datetime.py`).
-- **Đã xác nhận bằng trình duyệt thật (chrome-devtools MCP) toàn bộ luồng**:
-  kết nối tài khoản (chọn platform → nhập tên → Kết nối → redirect qua
-  backend → trang consent giả → Cho phép → quay lại dashboard, tài khoản
-  hiện ra), Thu hồi tài khoản, và Publish bị chặn đúng khi QC chưa PASS
-  (đúng §15) — cả qua curl lẫn qua UI thật.
-- 15 test mới (`test_crypto.py`, `test_publishing_quota.py`,
-  `test_publishing_stage.py`, `test_utc_datetime.py`).
+**Hạ tầng Celery/Redis §20 Phase 3** (commit `7d0f3b3`, đã push) —
+`core/celery_app.py`, `core/tasks.py` (`run_for_video_task`/`resume_job_task`),
+`scripts/worker.py`, `scripts/run_pipeline.py --via-celery`. Bug thật bắt
+được: pool `prefork` mặc định làm vỡ Metal GPU của `mlx-whisper` khi fork()
+— sửa mặc định `--pool=solo`. Biến môi trường không tự truyền tới worker
+(khác tiến trình).
+
+**Dashboard Phase 4 §19** (commit `7a7a1fa`, đã push) — backend
+`api/routes/dashboard.py` (Projects/Batch Queue/Video Workspace/gates),
+`services/translation_edit.py` (sửa inline translation KHÔNG gọi lại LLM,
+tự bump cache `TRANSLATE` giữ nguyên `input_hash`/đổi `output_digest`).
+Frontend `apps/web/` (Next.js 16 App Router + Tailwind v4): trang Projects,
+Project detail, Batch Queue, Video Workspace (`DriftTimeline` SVG,
+`UnitEditor`, `GatesPanel`). Bug thật bắt được: `TranslateStage.output_ref`
+thiếu nội dung dịch (chỉ có số lượng) → cache downstream không invalidate
+khi dịch lại ra chữ khác; sửa bằng `texts_digest`. Bug nhỏ: `job.error_message`
+không tự xoá khi job thành công sau lần fail trước.
+
+**Publishing / Phase 5 §6.17/§18.1/§18.3** (commit `8c62bf7`, **CHƯA push**
+theo yêu cầu người dùng) — `services/publishing/` (base/adapters/registry/
+quota, config-driven, chỉ provider `mock`), `db.PlatformAccount` (token mã
+hoá qua `services/crypto.py` Fernet — bảng thứ 24), `workers/publishing/stage.py::PublishStage`
+(chặn: QC PASS → account hợp lệ/tự refresh → còn quota → publish, ghi
+`PublishingJob`, không có `_clear_previous` vì mỗi lần là sự kiện thật),
+`api/routes/publishing.py` (OAuth 3-legged thật qua `mock`, state CSRF).
+Frontend: `/publish` (Publishing Calendar), `PublishPanel` trong Video
+Workspace. Bug thật bắt được: SQLite mất tzinfo khi đọc lại
+`DateTime(timezone=True)` qua session mới → `db/base.py::UTCDateTime` sửa
+cho MỌI cột datetime trong schema.
+
+**Rule docs mới**: `.claude/rules/{approval-gates,infra,dashboard,publishing}.md`.
 
 ## 3. Trạng thái hiện tại
 
-- **238/238 test Python pass**. Frontend: `tsc --noEmit` sạch, `eslint`
-  sạch, `next build` thành công (6 route: `/`, `/queue`, `/publish`,
-  `/projects/[id]`, `/jobs/[id]`, `/_not-found`).
-- **Lỗi đã biết, KHÔNG phải mới**: QC `background_retained` FAIL trên
-  es-ES — hạn chế fixture tổng hợp (sine wave), không phải bug render.
-- **Chưa commit**: toàn bộ code Phase 5 phiên này (services/publishing/,
-  workers/publishing/stage.py, api/routes/publishing.py, db model +
-  UTCDateTime fix, apps/web/src/app/publish/, PublishPanel, test mới, rule
-  docs) — đã git add? CHƯA, đang chờ xác nhận.
-- **Người dùng yêu cầu KHÔNG tự push code lên git** phiên này — chỉ commit
-  local nếu được xác nhận, không `git push`.
-- Nợ kỹ thuật khác (chi tiết: [.claude/rules/tech-debt.md](../rules/tech-debt.md)):
-  `forced_align` xấp xỉ tuyến tính; `speech_rate_cps` chưa hiệu chuẩn cho
-  `elevenlabs`/`openai_tts`; `render` chưa áp `FitStrategy.VIDEO_STRETCH`;
-  chưa có render preset lẫn publishing preset (§14); `speaker_voices` chưa
-  có cho `elevenlabs`; dry-run cost estimate (§17.1) chưa có; `onscreen_text`
-  vẫn stub; Settings (Phase 4) chưa làm; publish chưa nối nền tảng thật nào.
+- **238/238 test Python pass** (`.venv/bin/python -m pytest apps/api/tests -q`).
+- Frontend `apps/web/`: `tsc --noEmit` sạch, `eslint` sạch, `next build`
+  thành công (6 route).
+- Đã xác nhận **bằng trình duyệt thật** (chrome-devtools MCP) cho cả Phase 4
+  (sửa inline translation → downstream chạy lại thật → QC/drift cập nhật
+  đúng) và Phase 5 (kết nối OAuth account → publish bị chặn đúng khi QC
+  fail → thu hồi account).
+- Lỗi đã biết KHÔNG phải mới: QC `background_retained` FAIL trên es-ES —
+  hạn chế fixture sine wave tổng hợp, không phải bug render.
+- **Git**: `main` đang ahead `origin/main` 1 commit (`8c62bf7`, Publishing
+  Phase 5) — **chưa push theo yêu cầu người dùng**. 4 commit trước đó
+  (compose, approval gates, Celery, dashboard) đã push.
+- diarize + multi-voice TTS thật vẫn chưa kích hoạt được trên máy này
+  (thiếu `HF_TOKEN`) — chỉ test qua mock.
+
+**Settings Phase 4 — READ-ONLY** (chưa commit, xem `git status`) —
+`apps/api/api/routes/settings.py` (mới, `GET /api/dashboard/settings`),
+đăng ký trong `apps/api/api/main.py`. Phạm vi chốt sau khi hỏi người dùng:
+CHỈ hiện trạng thái, không sửa gì qua UI, vì 3 mảnh tech-debt cũ có mức sẵn
+sàng khác nhau — API key provider chỉ đọc env var, không lưu DB
+(`providers.md`) nên không thể có ô sửa; concurrency chưa có cơ chế giới hạn
+nào trong code để sửa; retention (`RETENTION_DAYS`) chưa có tiến trình purge
+nào đọc nên sửa qua UI vô nghĩa. Trả về: trạng thái configured của mọi
+provider dịch/TTS/publishing (không bao giờ lộ giá trị key/token thật —
+`test_khong_lo_api_key_that_ra_response` khoá lại), `verify_ffmpeg()`,
+`RETENTION_DAYS`, ngưỡng duration-fit/QC, model + trạng thái `HF_TOKEN` của
+diarize, hạ tầng (database_url/storage_root/redis_url/token_encryption_key
+đã cấu hình chưa). Frontend: `apps/web/src/app/settings/page.tsx` + type
+`SettingsStatus`/`ProviderStatus`/`SettingsPlatformStatus` trong `api.ts` +
+link Nav. Test: `apps/api/tests/test_settings_route.py` (6 test, gọi thẳng
+hàm route không qua HTTP client — cùng mẫu test hàm thuần). Đã xác nhận
+bằng trình duyệt thật (chrome-devtools MCP) trên dữ liệu backend thật.
+Cập nhật `.claude/rules/dashboard.md` (mục Settings mới) và `tech-debt.md`.
 
 ## 4. Bước tiếp theo
 
-1. **Xác nhận commit (LOCAL, không push) toàn bộ Phase 5** — đang chờ.
-2. Roadmap §20 core (Phase 0–5) nay đã xong về mặt kiến trúc/scaffold. Lựa
-   chọn kế tiếp: **Settings** (mảng cuối của Phase 4, không phụ thuộc gì
-   khác); nối publish với **1 nền tảng thật** (YouTube dễ nhất — không cần
-   audit như TikTok) nếu người dùng muốn tự tạo OAuth app; **Phase 6** (mở
-   rộng: lip-sync, on-screen text, GPU tuning, regression tests); hoặc việc
-   nhỏ nâng chất lượng còn tồn (dry-run cost §17.1, hiệu chuẩn
-   `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render preset).
-3. Nếu người dùng lấy được `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`,
-   export `HF_TOKEN`, chạy lại `scripts/run_pipeline.py` để xác nhận diarize
-   + multi-voice TTS chạy thật.
+1. Hỏi người dùng có muốn commit + push việc Settings vừa làm (và commit cũ
+   `8c62bf7` Publishing Phase 5) lên remote không — hiện CHƯA commit gì.
+2. Roadmap §20 core (Phase 0–5) đã xong về kiến trúc + vòng vận hành lõi của
+   dashboard. Việc còn mở: nối publish với 1 nền tảng thật (YouTube dễ nhất,
+   cần người dùng tự tạo OAuth app trên Google Cloud Console), cơ chế purge
+   thật cho retention, cơ chế giới hạn concurrency thật, Phase 6 (mở rộng),
+   hoặc việc nhỏ nâng chất lượng (dry-run cost §17.1, hiệu chuẩn
+   `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render/publishing preset
+   §14).
+3. Nếu có `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`, export
+   `HF_TOKEN`, chạy lại `scripts/run_pipeline.py` để xác nhận diarize +
+   multi-voice TTS chạy thật.

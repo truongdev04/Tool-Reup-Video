@@ -192,6 +192,49 @@ export interface PublishingHistoryEntry {
   locale?: string | null;
 }
 
+export interface ProviderStatus {
+  id: string;
+  name: string;
+  adapter: string;
+  needs_api_key: boolean;
+  api_key_env: string | null;
+  is_configured: boolean;
+}
+
+export interface SettingsPlatformStatus {
+  id: string;
+  name: string;
+  needs_oauth_app: boolean;
+  is_configured: boolean;
+}
+
+export interface SettingsStatus {
+  config_version: string;
+  ffmpeg: { ffmpeg_bin: string; ffprobe_bin: string; ok: boolean; missing: string[] };
+  translation_providers: ProviderStatus[];
+  tts_providers: ProviderStatus[];
+  publishing_platforms: SettingsPlatformStatus[];
+  retention_days: Record<string, number | null>;
+  thresholds: {
+    max_cumulative_drift_ms: number;
+    tempo_min: number;
+    tempo_max: number;
+    min_silence_keep_ms: number;
+  };
+  diarization: {
+    model: string;
+    min_speakers: number | null;
+    max_speakers: number | null;
+    hf_token_configured: boolean;
+  };
+  infra: {
+    database_url: string;
+    storage_root: string;
+    redis_url: string;
+    token_encryption_key_configured: boolean;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Calls
 // ---------------------------------------------------------------------------
@@ -240,6 +283,8 @@ export const api = {
   }),
   authorizeUrl: (platform: string, label: string) =>
     `${BASE_URL}/api/dashboard/publishing/authorize?${new URLSearchParams({ platform, label })}`,
+
+  settingsStatus: () => request<SettingsStatus>("/api/dashboard/settings"),
 };
 
 export function apiBaseUrl(): string {

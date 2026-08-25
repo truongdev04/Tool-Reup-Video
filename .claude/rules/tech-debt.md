@@ -32,10 +32,14 @@
   không đi qua gate check.
 - Dashboard Phase 4 (§19): Projects, Video Workspace (sửa inline translation,
   drift timeline, QC, approval gate, publish), Batch Queue, Publishing
-  Calendar — xem [dashboard.md](dashboard.md), [publishing.md](publishing.md).
-  Còn thiếu: **Settings** (provider API key, concurrency, retention...);
-  không auth ở dashboard lẫn API; Batch Queue không tự refresh khi Celery đổi
-  trạng thái job nền (phải tự tải lại trang).
+  Calendar, Settings (READ-ONLY) — xem [dashboard.md](dashboard.md),
+  [publishing.md](publishing.md). Còn thiếu: **Settings sửa được** (đổi API
+  key/concurrency/retention qua UI) — cố ý không làm, vì API key theo
+  [providers.md](providers.md) không bao giờ lưu DB, concurrency chưa có cơ
+  chế giới hạn nào trong code để sửa, và retention chưa có tiến trình purge
+  nào đọc `RETENTION_DAYS` (xem mục dưới); không auth ở dashboard lẫn API;
+  Batch Queue không tự refresh khi Celery đổi trạng thái job nền (phải tự
+  tải lại trang).
 - Publishing (§6.17, §18.1, §18.3, Phase 5) đã thực thi đầy đủ kiến trúc +
   provider `mock` — xem [publishing.md](publishing.md) cho chi tiết và giới
   hạn (chưa nối YouTube/TikTok/Instagram thật — cần app OAuth thật do người

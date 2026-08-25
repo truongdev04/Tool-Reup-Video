@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from api.routes.dashboard import router as dashboard_router
 from api.routes.pipeline import router as pipeline_router
 from api.routes.publishing import router as publishing_router
+from api.routes.settings import router as settings_router
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(pipeline_router)
 app.include_router(dashboard_router)
 app.include_router(publishing_router)
+app.include_router(settings_router)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 

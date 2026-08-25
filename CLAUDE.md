@@ -38,7 +38,7 @@ không cần đọc hết mọi file mỗi phiên.
 | `services/fonts.py`, `apps/api/assets/fonts/` — dùng chung giữa `render` và `qc` | [fonts.md](.claude/rules/fonts.md) |
 | `services/approval_gates.py`, `services/voice_consent.py`, `ApprovalGateRecord`/`VoiceConsent` | [approval-gates.md](.claude/rules/approval-gates.md) |
 | `core/celery_app.py`, `core/tasks.py`, `scripts/worker.py` — hạ tầng queue | [infra.md](.claude/rules/infra.md) |
-| `apps/api/api/routes/dashboard.py`, `apps/web/` — dashboard Phase 4 | [dashboard.md](.claude/rules/dashboard.md) |
+| `apps/api/api/routes/dashboard.py`, `apps/api/api/routes/settings.py`, `apps/web/` — dashboard Phase 4 | [dashboard.md](.claude/rules/dashboard.md) |
 | `services/publishing/`, `workers/publishing/`, `api/routes/publishing.py`, `db.PlatformAccount` | [publishing.md](.claude/rules/publishing.md) |
 | Viết code mới ở bất kỳ đâu (idempotency, hard-code, module thuần, test) | [coding-style.md](.claude/rules/coding-style.md) |
 | Trước khi bắt đầu việc mới — biết trước cái gì đang dang dở | [tech-debt.md](.claude/rules/tech-debt.md) |

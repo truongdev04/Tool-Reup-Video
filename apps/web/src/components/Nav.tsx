@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Projects" },
   { href: "/queue", label: "Batch Queue" },
   { href: "/publish", label: "Publishing" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function Nav() {
