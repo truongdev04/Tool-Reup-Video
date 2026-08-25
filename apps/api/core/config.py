@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     #: core/celery_app.py, .claude/rules/infra.md.
     redis_url: str = "redis://localhost:6379/0"
 
+    #: Khoá mã hoá OAuth token trước khi lưu DB (§18.1, Phase 5) — base64
+    #: Fernet key (`Fernet.generate_key()`). None ở dev/test thì
+    #: `services/crypto.py` tự sinh khoá TẠM (mất khi restart) kèm cảnh báo —
+    #: KHÔNG dùng mặc định đó ở môi trường có token thật. Xem
+    #: .claude/rules/publishing.md.
+    token_encryption_key: str | None = None
+
     @field_validator("storage_root")
     @classmethod
     def _resolve(cls, v: Path) -> Path:

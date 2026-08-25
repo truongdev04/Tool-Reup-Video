@@ -11,7 +11,8 @@
   được lưu trong `SegmentTiming` nhưng chưa có stage nào đọc và thực thi nó.
   Compose (Phase 2, branding) là nơi hợp lý để làm việc này.
 - `render` chưa có render preset (§14) để chọn bitrate/aspect ratio theo cấu
-  hình — đang hard-code 6000k, giữ nguyên resolution/aspect nguồn.
+  hình — đang hard-code 6000k, giữ nguyên resolution/aspect nguồn. Cùng loại
+  nợ với **Publishing preset** (§14) — xem [publishing.md](publishing.md).
 - Multi-voice TTS theo speaker (`workers/tts/voice_assignment.py`) đã nối dây
   — nhưng `speaker_voices` (giọng phụ) trong config chỉ điền cho `macos_say`
   (en-US, fr-FR) và `openai_tts` (mọi locale). `elevenlabs` chưa có vì cần
@@ -29,12 +30,19 @@
   duyệt cho locale này không tự duyệt cho locale khác của cùng source dù
   transcript dùng chung (`cache_scope=SOURCE`); `rerun_from` (partial re-run)
   không đi qua gate check.
-- Dashboard Phase 4 (§19) mới làm "vòng vận hành lõi": Projects, Video
-  Workspace (sửa inline translation, drift timeline, QC, approval gate),
-  Batch Queue — xem [dashboard.md](dashboard.md). Còn thiếu: **Publishing
-  Calendar** (chờ Phase 5 có `publish` thật mới có gì để hiện) và **Settings**
-  (provider API key, concurrency, retention...); không auth; Batch Queue
-  không tự refresh khi Celery đổi trạng thái job nền (phải tự tải lại trang).
+- Dashboard Phase 4 (§19): Projects, Video Workspace (sửa inline translation,
+  drift timeline, QC, approval gate, publish), Batch Queue, Publishing
+  Calendar — xem [dashboard.md](dashboard.md), [publishing.md](publishing.md).
+  Còn thiếu: **Settings** (provider API key, concurrency, retention...);
+  không auth ở dashboard lẫn API; Batch Queue không tự refresh khi Celery đổi
+  trạng thái job nền (phải tự tải lại trang).
+- Publishing (§6.17, §18.1, §18.3, Phase 5) đã thực thi đầy đủ kiến trúc +
+  provider `mock` — xem [publishing.md](publishing.md) cho chi tiết và giới
+  hạn (chưa nối YouTube/TikTok/Instagram thật — cần app OAuth thật do người
+  dùng tự đăng ký; `scheduled_at` chưa có gì dispatch; publishing preset chưa
+  làm). Tiện sửa 1 bug thật khi test qua HTTP: SQLite mất tzinfo khi đọc lại
+  `DateTime(timezone=True)` qua session mới — `db/base.py::UTCDateTime` sửa
+  cho MỌI cột datetime trong schema, không chỉ `PlatformAccount`.
 - Ước tính chi phí dry-run trước khi batch chạy (§17.1) chưa có — soft/hard
   limit (nếu có) chỉ chặn được *khi đang chạy*, không cảnh báo trước.
 - `onscreen_text` vẫn là `NotImplementedStage` — theo §15, `onscreen_text`

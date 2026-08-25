@@ -4,87 +4,81 @@
 
 ## 1. Mục tiêu
 
-Theo roadmap §20: Phase 0–3 xong hoàn toàn. Phase 4 (Dashboard) — "vòng vận
-hành lõi" (Projects, Video Workspace, Batch Queue, QC Review) đã xong và xác
-nhận chạy thật qua trình duyệt phiên này. Còn lại của Phase 4: Publishing
-Calendar (chờ Phase 5), Settings.
+Theo roadmap §20: Phase 0–4 xong hoàn toàn (Phase 4 còn thiếu mỗi Settings).
+Phase 5 (Publishing) — "scaffold đầy đủ + mock provider" theo lựa chọn của
+người dùng — đã xong: kiến trúc OAuth/quota/publish đầy đủ, test bằng
+provider `mock` (không gọi YouTube/TikTok/Instagram thật, vì cần app OAuth
+thật do người dùng tự đăng ký — chưa làm lượt này).
 
 ## 2. Những phần đã hoàn thành
 
-**Phase 0–3 — đã xong, đã commit+push.** Chi tiết:
-[.claude/rules/compose.md](../rules/compose.md),
-[.claude/rules/approval-gates.md](../rules/approval-gates.md),
+**Phase 0–4 — đã xong, đã commit (LOCAL, chưa push theo yêu cầu).** Chi
+tiết: [.claude/rules/dashboard.md](../rules/dashboard.md),
 [.claude/rules/infra.md](../rules/infra.md).
 
-**Dashboard Phase 4 — vòng vận hành lõi (§19) — MỚI phiên này, CHƯA
-commit/push.** Chi tiết đầy đủ: [.claude/rules/dashboard.md](../rules/dashboard.md).
+**Publishing / Phase 5 (§6.17, §18.1, §18.3, §20) — MỚI phiên này.** Chi
+tiết đầy đủ: [.claude/rules/publishing.md](../rules/publishing.md).
 
-- Backend: `apps/api/api/routes/dashboard.py` (mới) — Projects (list/detail),
-  Batch Queue (list job mọi project, lọc theo trạng thái), Video Workspace
-  (chi tiết 1 job: unit/translation/drift/QC/gates), sửa inline translation
-  (PATCH + rerun-downstream), approve gate, resume job. CORS bật trong
-  `api/main.py` cho `localhost:3000`.
-- Service mới: `services/translation_edit.py` — sửa bản dịch KHÔNG gọi lại
-  LLM, tự bump cache `TRANSLATE` (cùng `input_hash`, `output_ref` đổi theo
-  nội dung) để downstream (`duration_fit`→`tts`→...→`qc`) chạy lại đúng mà
-  TRANSLATE vẫn cache-hit. `services/pipeline_runner.py::rerun_stages_for_job`
-  (mới, refactor từ `resume_job`) — chạy một tập stage chỉ định cho job có sẵn.
-- **Bug bắt được khi soát cơ chế cache cho tính năng này**:
-  `TranslateStage.output_ref` trước đây chỉ chứa SỐ LƯỢNG, không chứa NỘI
-  DUNG bản dịch — dịch lại ra chữ khác nhưng cùng số lượng thì
-  `output_digest` không đổi, downstream cache hit nhầm bản dịch CŨ. Đã sửa
-  (`texts_digest`), có regression test (`test_translate_stage.py`).
-- Bug nhỏ khác bắt được khi soát dữ liệu thật qua API:
-  `RenderJob.error_message` không được xoá khi job thành công sau lần fail
-  trước — dashboard hiện lỗi cũ mãi dù đã chạy lại OK. Đã sửa trong
-  `core/orchestrator.py`, có test.
-- Frontend: `apps/web/` — Next.js 16 (App Router, TypeScript, Tailwind v4),
-  toàn Client Component gọi thẳng backend qua `src/lib/api.ts`. 4 trang:
-  Projects (`/`), Project detail (`/projects/[id]`), Batch Queue (`/queue`),
-  Video Workspace (`/jobs/[id]` — transcript/dịch có sửa inline qua
-  `UnitEditor` + preview "sẽ chạy lại gì" trước khi lưu, `DriftTimeline` SVG
-  theo đúng yêu cầu §19, `GatesPanel` duyệt/chạy tiếp cổng, QC findings, video
-  player).
-- **Đã xác nhận bằng trình duyệt thật (chrome-devtools), không chỉ
-  build/lint pass**: mở cả 4 trang với dữ liệu thật từ job Celery smoke test
-  trước đó; bấm "Sửa" một câu dịch → lưu → thấy đúng preview stage sẽ chạy
-  lại → sau khi lưu, downstream chạy lại thật (log uvicorn xác nhận PATCH +
-  POST rerun-downstream 200 OK), UI tự refetch và hiện đúng: bản dịch mới,
-  drift timeline chuyển đỏ (bản dịch dài hơn làm audio trôi >300ms), QC
-  chuyển FAIL đúng chỗ, video re-render (frame khác). Không có console error.
-- `apps/web/CLAUDE.md`/`AGENTS.md` (tự sinh bởi `next dev`, KHÔNG xoá — file
-  cảnh báo Next.js 16 có breaking changes so với training data, đã đọc
-  `node_modules/next/dist/docs/` trước khi code theo đúng hướng dẫn đó).
+- `services/publishing/` (base/adapters/registry/quota) — config-driven
+  đúng mẫu translation/TTS, chỉ có provider `mock` (chủ ý, theo lựa chọn
+  scope của người dùng). `config/publishing/mock.json` dùng ĐÚNG số quota
+  thật của YouTube (10000/1600 ≈ 6 video/ngày) dù không gọi mạng thật.
+- `db/models.py::PlatformAccount` (token mã hoá qua `services/crypto.py`,
+  Fernet) — bảng thứ 24 (`test_du_24_bang`).
+- `workers/publishing/stage.py::PublishStage` — nối thật vào
+  `PIPELINE_ORDER` (không còn `NotImplementedStage`). Chặn đúng thứ tự: QC
+  phải PASS → account phải hợp lệ (tự refresh nếu hết hạn còn refresh_token)
+  → còn quota hôm nay → mới publish thật, ghi `PublishingJob`, set
+  `ai_disclosure=True`.
+- `api/routes/publishing.py` — OAuth 3-legged THẬT (authorize→consent→
+  callback, state CSRF chống replay), accounts/revoke, quota/history,
+  publish-job. `mock` provider tự đóng vai "authorization server" (trang
+  HTML riêng) nhưng đi qua đúng cơ chế redirect như nền tảng thật.
+- Frontend: trang `/publish` (Publishing Calendar — kết nối account, quota,
+  lịch sử) + `PublishPanel` nhúng vào Video Workspace (`/jobs/[id]`).
+- **Bug thật bắt được khi test qua HTTP thật (không lộ ở unit test cùng
+  session)**: SQLite đọc lại `DateTime(timezone=True)` qua session MỚI mất
+  tzinfo → so sánh với `datetime.now(UTC)` ném `TypeError`. Sửa bằng
+  `db/base.py::UTCDateTime` (TypeDecorator) áp cho MỌI cột datetime trong
+  `db/models.py`, không chỉ chỗ vừa lộ ra — có test round-trip 2-session
+  khoá lại fix (`test_utc_datetime.py`).
+- **Đã xác nhận bằng trình duyệt thật (chrome-devtools MCP) toàn bộ luồng**:
+  kết nối tài khoản (chọn platform → nhập tên → Kết nối → redirect qua
+  backend → trang consent giả → Cho phép → quay lại dashboard, tài khoản
+  hiện ra), Thu hồi tài khoản, và Publish bị chặn đúng khi QC chưa PASS
+  (đúng §15) — cả qua curl lẫn qua UI thật.
+- 15 test mới (`test_crypto.py`, `test_publishing_quota.py`,
+  `test_publishing_stage.py`, `test_utc_datetime.py`).
 
 ## 3. Trạng thái hiện tại
 
-- **221/221 test Python pass** (`apps/api/tests`). Frontend: `npx tsc
-  --noEmit` sạch, `npm run lint` sạch, `npm run build` thành công.
+- **238/238 test Python pass**. Frontend: `tsc --noEmit` sạch, `eslint`
+  sạch, `next build` thành công (6 route: `/`, `/queue`, `/publish`,
+  `/projects/[id]`, `/jobs/[id]`, `/_not-found`).
 - **Lỗi đã biết, KHÔNG phải mới**: QC `background_retained` FAIL trên
-  es-ES — hạn chế của fixture tổng hợp (sine wave), không phải bug render.
-- **Chưa commit/push**: toàn bộ code dashboard phiên này (backend
-  `dashboard.py`, `translation_edit.py`, sửa `pipeline_runner.py`/
-  `orchestrator.py`/`main.py`, test mới, và cả thư mục `apps/web/`) — chưa
-  `git add`.
-- **Chưa làm**: Publishing Calendar (chờ Phase 5 có gì để hiện), Settings
-  (provider API key/concurrency/retention), auth cho cả CLI lẫn dashboard,
-  tự động refresh Batch Queue khi Celery đổi trạng thái nền.
+  es-ES — hạn chế fixture tổng hợp (sine wave), không phải bug render.
+- **Chưa commit**: toàn bộ code Phase 5 phiên này (services/publishing/,
+  workers/publishing/stage.py, api/routes/publishing.py, db model +
+  UTCDateTime fix, apps/web/src/app/publish/, PublishPanel, test mới, rule
+  docs) — đã git add? CHƯA, đang chờ xác nhận.
+- **Người dùng yêu cầu KHÔNG tự push code lên git** phiên này — chỉ commit
+  local nếu được xác nhận, không `git push`.
 - Nợ kỹ thuật khác (chi tiết: [.claude/rules/tech-debt.md](../rules/tech-debt.md)):
   `forced_align` xấp xỉ tuyến tính; `speech_rate_cps` chưa hiệu chuẩn cho
   `elevenlabs`/`openai_tts`; `render` chưa áp `FitStrategy.VIDEO_STRETCH`;
-  chưa có render preset (§14); `speaker_voices` chưa có cho `elevenlabs`;
-  dry-run cost estimate (§17.1) chưa có; `onscreen_text` vẫn stub; diarize +
-  multi-voice TTS thật chưa kích hoạt được (chưa có `HF_TOKEN`).
+  chưa có render preset lẫn publishing preset (§14); `speaker_voices` chưa
+  có cho `elevenlabs`; dry-run cost estimate (§17.1) chưa có; `onscreen_text`
+  vẫn stub; Settings (Phase 4) chưa làm; publish chưa nối nền tảng thật nào.
 
 ## 4. Bước tiếp theo
 
-1. **Xác nhận commit/push toàn bộ dashboard Phase 4** (đang chờ, chưa
-   `git add` — lượng thay đổi lớn, gồm cả `apps/web/` mới).
-2. Phase 0–4 (phần lõi) đã xong theo roadmap §20. Lựa chọn kế tiếp: hoàn
-   thiện nốt Phase 4 (Settings — không phụ thuộc gì khác, làm được ngay;
-   Publishing Calendar phải chờ Phase 5), hoặc bắt đầu **Phase 5** (`publish`,
-   OAuth từng nền tảng — xem ràng buộc quota §18.3 trước khi thiết kế), hoặc
-   việc nhỏ nâng chất lượng còn tồn (dry-run cost §17.1, hiệu chuẩn
+1. **Xác nhận commit (LOCAL, không push) toàn bộ Phase 5** — đang chờ.
+2. Roadmap §20 core (Phase 0–5) nay đã xong về mặt kiến trúc/scaffold. Lựa
+   chọn kế tiếp: **Settings** (mảng cuối của Phase 4, không phụ thuộc gì
+   khác); nối publish với **1 nền tảng thật** (YouTube dễ nhất — không cần
+   audit như TikTok) nếu người dùng muốn tự tạo OAuth app; **Phase 6** (mở
+   rộng: lip-sync, on-screen text, GPU tuning, regression tests); hoặc việc
+   nhỏ nâng chất lượng còn tồn (dry-run cost §17.1, hiệu chuẩn
    `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render preset).
 3. Nếu người dùng lấy được `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`,
    export `HF_TOKEN`, chạy lại `scripts/run_pipeline.py` để xác nhận diarize

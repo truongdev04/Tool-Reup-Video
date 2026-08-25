@@ -8,6 +8,7 @@ import StatusBadge from "@/components/StatusBadge";
 import DriftTimeline from "@/components/DriftTimeline";
 import UnitEditor from "@/components/UnitEditor";
 import GatesPanel from "@/components/GatesPanel";
+import PublishPanel from "@/components/PublishPanel";
 
 export default function JobWorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -98,6 +99,13 @@ export default function JobWorkspacePage() {
             className="mt-2 max-w-md rounded-lg border border-slate-200 dark:border-slate-800"
           />
         )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          Publish (§15 — chỉ đăng được khi QC PASS)
+        </h2>
+        <PublishPanel jobId={job.id} defaultTitle={`${job.source_filename ?? "video"} (${job.locale})`} />
       </section>
 
       <section className="space-y-3">

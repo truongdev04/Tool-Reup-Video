@@ -2,9 +2,9 @@
 
 Đã implement thật: ingest, analyze, separate, stt, diarize, segment_plan,
 translate, duration_fit, tts, forced_align, timeline_assembly, subtitle,
-compose, render, qc. Các stage còn lại là NotImplementedStage giữ đúng
-contract — harness chạy hết pipeline mà không sập, và mỗi stub ghi rõ nó thuộc
-phase nào theo lộ trình §20.
+compose, render, qc, publish. Các stage còn lại là NotImplementedStage giữ
+đúng contract — harness chạy hết pipeline mà không sập, và mỗi stub ghi rõ nó
+thuộc phase nào theo lộ trình §20.
 
 `diarize` tự bỏ qua (không phải NotImplementedStage, không NonRetryableError)
 khi thiếu `pyannote.audio`/`HF_TOKEN` — xem docstring
@@ -27,6 +27,7 @@ from workers.diarization.stage import DiarizeStage
 from workers.duration_fit.stage import DurationFitStage
 from workers.forced_align.stage import ForcedAlignStage
 from workers.ingest.stage import IngestStage
+from workers.publishing.stage import PublishStage
 from workers.qc.stage import QCStage
 from workers.render.stage import RenderStage
 from workers.segment_planner.stage import SegmentPlanStage
@@ -40,7 +41,6 @@ from workers.tts.stage import TTSStage
 _PLANNED_PHASE: dict[StageName, str] = {
     StageName.ONSCREEN_TEXT: "Phase 6",
     StageName.LIPSYNC: "Phase 6",
-    StageName.PUBLISH: "Phase 5",
 }
 
 
@@ -60,6 +60,7 @@ def register_all() -> None:
     register(SubtitleStage())
     register(RenderStage())
     register(QCStage())
+    register(PublishStage())
     for name, phase in _PLANNED_PHASE.items():
         register(NotImplementedStage(name, phase))
 

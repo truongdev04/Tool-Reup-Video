@@ -1,0 +1,13 @@
+{
+  "id": "mock",
+  "name": "Mock (test, không gọi nền tảng thật)",
+  "adapter": "mock",
+  "authorize_url": "",
+  "token_url": "",
+  "api_base_url": "",
+  "client_id_env": null,
+  "client_secret_env": null,
+  "scope": ["upload"],
+  "quota_daily_units": 10000,
+  "cost_per_upload_units": 1600
+}

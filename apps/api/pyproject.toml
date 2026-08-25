@@ -26,6 +26,9 @@ dependencies = [
     # worker (`brew install redis`), không phải server từ xa.
     "celery>=5.3",
     "redis>=5.0",
+    # Phase 5 (§20): mã hoá OAuth token khi lưu DB (§18.1 "OAuth token mã
+    # hoá") — xem services/crypto.py.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

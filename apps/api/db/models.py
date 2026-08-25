@@ -14,7 +14,6 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -33,7 +32,7 @@ from core.types import (
     QCVerdict,
     StageName,
 )
-from db.base import Base, PKMixin, TimestampMixin
+from db.base import Base, PKMixin, TimestampMixin, UTCDateTime
 
 # ---------------------------------------------------------------------------
 # §10.1 — Project, brand, preset, voice
@@ -302,7 +301,7 @@ class Translation(Base, PKMixin, TimestampMixin):
     #: Version + approved_by để lineage truy vết được (§10.4).
     version: Mapped[int] = mapped_column(Integer, default=1)
     approved_by: Mapped[str | None] = mapped_column(String(200))
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     provider: Mapped[str | None] = mapped_column(String(100))
     provider_version: Mapped[str | None] = mapped_column(String(100))
     glossary_applied: Mapped[list] = mapped_column(JSON, default=list)
@@ -353,7 +352,7 @@ class ApprovalGateRecord(Base, PKMixin, TimestampMixin):
     gate: Mapped[ApprovalGate] = mapped_column(String(50))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     approved_by: Mapped[str | None] = mapped_column(String(200))
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     note: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (UniqueConstraint("render_job_id", "gate", name="uq_gate_per_job"),)
@@ -366,8 +365,8 @@ class VoiceConsent(Base, PKMixin, TimestampMixin):
 
     subject_name: Mapped[str] = mapped_column(String(200))
     scope: Mapped[str] = mapped_column(Text)
-    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    granted_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     document_path: Mapped[str | None] = mapped_column(String(1000))
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -411,8 +410,8 @@ class StageRun(Base, PKMixin, TimestampMixin):
     input_hash: Mapped[str] = mapped_column(String(64), index=True)
     output_ref: Mapped[dict] = mapped_column(JSON, default=dict)
     attempt: Mapped[int] = mapped_column(Integer, default=1)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     was_cached: Mapped[bool] = mapped_column(Boolean, default=False)
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -463,7 +462,36 @@ class OutputFile(Base, PKMixin, TimestampMixin):
     #: Nghĩa vụ công bố nội dung AI (§18.2).
     ai_disclosure: Mapped[bool] = mapped_column(Boolean, default=True)
     qc_verdict: Mapped[QCVerdict | None] = mapped_column(String(20))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class PlatformAccount(Base, PKMixin, TimestampMixin):
+    """Tài khoản đã cấp quyền OAuth trên một nền tảng đích (§18.1, Phase 5).
+
+    `access_token`/`refresh_token` lưu Ở DẠNG MÃ HOÁ (`services/crypto.py`)
+    — KHÔNG BAO GIỜ đọc/ghi hai cột này trực tiếp, luôn qua
+    `encrypt_token`/`decrypt_token`. `PublishingJob.account_ref` trỏ tới
+    `PlatformAccount.id` của bảng này.
+    """
+
+    __tablename__ = "platform_accounts"
+
+    platform: Mapped[str] = mapped_column(String(50))
+    #: Tên hiển thị cho người vận hành chọn (vd. "Kênh YouTube chính") — KHÔNG
+    #: phải định danh của nền tảng.
+    label: Mapped[str] = mapped_column(String(200))
+    access_token_encrypted: Mapped[str] = mapped_column(Text)
+    refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    #: Cờ revoke thủ công (§18.1 "cơ chế revoke") — không xoá bản ghi để giữ
+    #: lineage của mọi PublishingJob đã dùng account này.
+    is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    def is_usable_at(self, when: datetime) -> bool:
+        if self.is_revoked:
+            return False
+        return self.expires_at is None or self.expires_at > when
 
 
 class PublishingJob(Base, PKMixin, TimestampMixin):
@@ -473,8 +501,8 @@ class PublishingJob(Base, PKMixin, TimestampMixin):
     platform: Mapped[str] = mapped_column(String(50))
     account_ref: Mapped[str] = mapped_column(String(200))
     status: Mapped[JobStatus] = mapped_column(String(50), default=JobStatus.PENDING)
-    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     platform_video_id: Mapped[str | None] = mapped_column(String(200))
     metadata_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     #: Quota nền tảng là nút thắt thật của batch (§18.3) — ghi lại để tính lịch.

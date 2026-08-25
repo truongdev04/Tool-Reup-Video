@@ -150,6 +150,48 @@ export interface PipelineReport {
   }[];
 }
 
+export interface PublishingPlatform {
+  id: string;
+  name: string;
+  needs_oauth_app: boolean;
+  is_configured: boolean;
+  quota_daily_units: number;
+  cost_per_upload_units: number;
+}
+
+export interface PublishingAccount {
+  id: string;
+  platform: string;
+  label: string;
+  scopes: string[];
+  is_revoked: boolean;
+  expires_at: string | null;
+  usable: boolean;
+  connected_at: string;
+}
+
+export interface QuotaEntry {
+  account_id: string;
+  label: string;
+  platform: string;
+  used_units: number;
+  limit_units: number;
+  remaining_uploads: number;
+}
+
+export interface PublishingHistoryEntry {
+  id: string;
+  platform: string;
+  account_ref: string;
+  status: JobStatus;
+  platform_video_id: string | null;
+  published_at: string | null;
+  quota_units_used: number | null;
+  error_message: string | null;
+  job_id?: string | null;
+  locale?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Calls
 // ---------------------------------------------------------------------------
@@ -177,6 +219,27 @@ export const api = {
     ),
   resumeJob: (jobId: string) =>
     request<PipelineReport>(`/api/dashboard/jobs/${jobId}/resume`, { method: "POST" }),
+
+  listPlatforms: () => request<PublishingPlatform[]>("/api/dashboard/publishing/platforms"),
+  listAccounts: () => request<PublishingAccount[]>("/api/dashboard/publishing/accounts"),
+  revokeAccount: (accountId: string) =>
+    request<{ id: string; is_revoked: boolean }>(
+      `/api/dashboard/publishing/accounts/${accountId}/revoke`, { method: "POST" },
+    ),
+  quotaSummary: () => request<QuotaEntry[]>("/api/dashboard/publishing/quota"),
+  publishingHistory: () => request<PublishingHistoryEntry[]>("/api/dashboard/publishing/history"),
+  jobPublishing: (jobId: string) =>
+    request<{ history: PublishingHistoryEntry[]; quota: QuotaEntry[] }>(
+      `/api/dashboard/jobs/${jobId}/publishing`,
+    ),
+  publishJob: (
+    jobId: string,
+    body: { platform: string; account_id: string; title: string; description?: string; hashtags?: string[] },
+  ) => request<PipelineReport>(`/api/dashboard/jobs/${jobId}/publish`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
+  authorizeUrl: (platform: string, label: string) =>
+    `${BASE_URL}/api/dashboard/publishing/authorize?${new URLSearchParams({ platform, label })}`,
 };
 
 export function apiBaseUrl(): string {

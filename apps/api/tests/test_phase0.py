@@ -19,12 +19,13 @@ from workers.ingest.stage import register_source
 
 # --- data model -------------------------------------------------------------
 
-def test_du_23_bang(session):
+def test_du_24_bang(session):
+    """23 bảng gốc (§10) + `platform_accounts` (Phase 5, §18.1 OAuth token)."""
     tables = set(Base.metadata.tables)
-    assert len(tables) == 23, f"kỳ vọng 23 bảng (§10), có {len(tables)}"
+    assert len(tables) == 24, f"kỳ vọng 24 bảng, có {len(tables)}"
     for t in ("stt_segments", "translation_units", "tts_chunks", "subtitle_cues",
               "segment_links", "segment_timing", "approval_gates", "voice_consents",
-              "onscreen_text", "stage_runs"):
+              "onscreen_text", "stage_runs", "platform_accounts"):
         assert t in tables, f"thiếu bảng {t}"
 
 
