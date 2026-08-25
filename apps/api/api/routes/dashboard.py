@@ -33,6 +33,7 @@ from db.models import (
     TTSChunk,
 )
 from services.approval_gates import approve as approve_gate
+from services.cost_estimate import estimate_batch
 from services.pipeline_runner import rerun_stages_for_job, resume_job
 from services.storage import Storage
 from services.translation_edit import edit_unit_translation
@@ -137,6 +138,58 @@ def project_detail(project_id: str) -> dict[str, Any]:
                     "created_at": j.created_at.isoformat(),
                 }
                 for j in jobs
+            ],
+        }
+
+
+@router.get("/projects/{project_id}/estimate")
+def estimate_project_cost(
+    project_id: str,
+    locales: str,
+    translation_provider: str = "mock",
+    tts_provider: str = "macos_say",
+) -> dict[str, Any]:
+    """Ước tính chi phí dịch + TTS cho `source_videos × locales` (§17.1) —
+    KHÔNG gọi mạng, KHÔNG tốn tiền, chỉ đọc dữ liệu đã có trong DB + config.
+    `locales` là danh sách phân tách bởi dấu phẩy (vd. `es-ES,ja-JP`)."""
+    target_locales = [l.strip() for l in locales.split(",") if l.strip()]
+    if not target_locales:
+        raise HTTPException(400, "cần truyền ít nhất 1 locale trong `locales`")
+
+    with session_scope() as session:
+        project = session.get(Project, project_id)
+        if project is None:
+            raise HTTPException(404, "không có project này")
+        videos = session.scalars(
+            select(SourceVideo).where(SourceVideo.project_id == project_id)
+        ).all()
+        if not videos:
+            raise HTTPException(400, "project chưa có video nguồn nào để ước tính")
+
+        result = estimate_batch(
+            session, source_videos=list(videos), target_locales=target_locales,
+            translation_provider_id=translation_provider, tts_provider_id=tts_provider,
+        )
+
+        return {
+            "translation_provider": result.translation_provider,
+            "tts_provider": result.tts_provider,
+            "total_translation_cost_usd": result.total_translation_cost_usd,
+            "total_tts_cost_usd": result.total_tts_cost_usd,
+            "total_cost_usd": result.total_cost_usd,
+            "total_tts_audio_seconds": result.total_tts_audio_seconds,
+            "total_translated_chars": result.total_translated_chars,
+            "warnings": result.warnings,
+            "items": [
+                {
+                    "source_video_id": i.source_video_id, "filename": i.filename, "locale": i.locale,
+                    "source_chars_measured": i.source_chars_measured, "source_chars": i.source_chars,
+                    "translated_chars_estimate": i.translated_chars_estimate,
+                    "tts_audio_seconds_estimate": i.tts_audio_seconds_estimate,
+                    "translation_cost_usd": i.translation_cost_usd, "tts_cost_usd": i.tts_cost_usd,
+                    "already_done": i.already_done,
+                }
+                for i in result.items
             ],
         }
 

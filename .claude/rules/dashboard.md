@@ -68,6 +68,32 @@ Không có codegen kiểu OpenAPI → TypeScript: sửa route ở
 `dashboard.py` thì phải tự sửa type khớp trong `api.ts`. Chi tiết chạy/cấu
 trúc: `apps/web/README.md`.
 
+## Ước tính chi phí — `GET /projects/{id}/estimate` (§17.1)
+
+`services/cost_estimate.py::estimate_batch()` — KHÔNG gọi mạng, KHÔNG tốn
+tiền, chỉ đọc DB + config. Nguyên tắc ưu tiên nguồn số (khớp "tự đo usage
+thực tế" của §17): `ApiUsage` thật (`is_estimate=False`) của ĐÚNG provider >
+giá niêm yết trong `ProviderConfig`/`TTSConfig` > cảnh báo "không ước tính
+được" (KHÔNG bao giờ lặng lẽ trả `0.0` khi giá thật sự chưa biết — `0.0`
+nghĩa là free thật, vd. `mock`/`ollama`/`macos_say` đã khai rõ trong JSON;
+`None` là "chưa ai điền giá", hai trường hợp này PHẢI phân biệt được qua
+`warnings`, xem `test_provider_chua_khai_gia_thi_bao_warning_...`). Ký tự
+nguồn ưu tiên `Transcript.full_text` thật; chưa transcribe thì suy đoán thô
+từ `duration_ms × speech_rate_cps` của `source_locale` — luôn cảnh báo rõ.
+`already_done` đánh dấu (video, locale) đã có TRANSLATE+TTS `StageRun`
+SUCCEEDED — chạy lại nhiều khả năng cache-hit (§16), gần như không tốn thêm,
+nhưng vẫn hiện số đầy đủ (không tự ý coi bằng 0). CLI tương đương:
+`scripts/estimate_cost.py`. Frontend:
+`apps/web/src/components/CostEstimatePanel.tsx`, nhúng vào trang Project
+detail, dropdown provider lấy từ chính `/api/dashboard/settings` (mục dưới)
+để không lặp danh sách provider ở hai nơi.
+
+Giới hạn đã biết: đây là ước tính CHO MỘT PROJECT khi người vận hành chủ
+động mở trang/gọi CLI, KHÔNG phải bước "xác nhận bắt buộc trước khi submit
+batch" như §17.1 mô tả — dự án hiện chưa có API "chạy batch N video" nào để
+gắn bước xác nhận đó vào (`scripts/run_pipeline.py` chạy trực tiếp qua CLI
+theo video/locale chỉ định, không phải submit qua dashboard).
+
 ## Settings — `apps/api/api/routes/settings.py` (READ-ONLY)
 
 Quyết định phạm vi có chủ ý (hỏi người dùng trước khi làm): trang Settings

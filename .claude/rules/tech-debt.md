@@ -47,8 +47,19 @@
   làm). Tiện sửa 1 bug thật khi test qua HTTP: SQLite mất tzinfo khi đọc lại
   `DateTime(timezone=True)` qua session mới — `db/base.py::UTCDateTime` sửa
   cho MỌI cột datetime trong schema, không chỉ `PlatformAccount`.
-- Ước tính chi phí dry-run trước khi batch chạy (§17.1) chưa có — soft/hard
-  limit (nếu có) chỉ chặn được *khi đang chạy*, không cảnh báo trước.
+- Ước tính chi phí dry-run trước khi batch chạy (§17.1) đã có —
+  `apps/api/services/cost_estimate.py::estimate_batch()`, CLI
+  `scripts/estimate_cost.py`, endpoint `GET
+  /api/dashboard/projects/{id}/estimate`, panel trong trang Project detail
+  (`apps/web/src/components/CostEstimatePanel.tsx`). Ưu tiên `ApiUsage` thật
+  (`is_estimate=False`) hơn giá niêm yết trong config; ký tự nguồn ưu tiên
+  `Transcript.full_text` thật, chỉ suy đoán thô từ `duration_ms` khi chưa
+  transcribe (luôn cảnh báo rõ trong `warnings`). Còn thiếu: KHÔNG có bước
+  "yêu cầu xác nhận trước khi chạy" thật — vì chưa có API "chạy batch N
+  video" nào để gắn bước xác nhận vào (`scripts/run_pipeline.py` chỉ chạy
+  từng video/locale chỉ định qua CLI, không phải một "submit batch" từ
+  dashboard); soft/hard limit chặn *khi đang chạy* (khác dry-run *trước khi*
+  chạy) vẫn chưa có ở cả hai nơi.
 - `onscreen_text` vẫn là `NotImplementedStage` — theo §15, `onscreen_text`
   còn bản ghi `pending` phải làm QC FAIL, nhưng QC hiện không có check này vì
   chưa có dữ liệu OCR thật để kiểm.

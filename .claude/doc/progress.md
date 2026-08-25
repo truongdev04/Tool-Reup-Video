@@ -89,17 +89,44 @@ hàm route không qua HTTP client — cùng mẫu test hàm thuần). Đã xác 
 bằng trình duyệt thật (chrome-devtools MCP) trên dữ liệu backend thật.
 Cập nhật `.claude/rules/dashboard.md` (mục Settings mới) và `tech-debt.md`.
 
+**Ước tính chi phí dry-run §17.1** (commit tiếp theo cùng lượt, đã push) —
+`apps/api/services/cost_estimate.py::estimate_batch()` (không gọi mạng,
+không tốn tiền — chỉ đọc DB/config). Ưu tiên `ApiUsage` thật
+(`is_estimate=False`) hơn giá niêm yết config; phân biệt rõ "giá = 0.0 thật
+sự free" (mock/ollama/macos_say) với "giá = None chưa ai điền" (openai/
+claude/gemini/openrouter/9router hiện tại — luôn cảnh báo, không lặng lẽ
+trả $0). Ký tự nguồn ưu tiên `Transcript.full_text` thật, suy đoán thô từ
+`duration_ms` khi chưa transcribe. `already_done` đánh dấu (video, locale)
+đã chạy TRANSLATE+TTS thành công (khả năng cache-hit §16). CLI
+`scripts/estimate_cost.py` (đã chạy thử thật trên `vla.db` dev, project
+"Celery Smoke Test"). Endpoint `GET /api/dashboard/projects/{id}/estimate`
+trong `dashboard.py`. Frontend `CostEstimatePanel.tsx` nhúng vào trang
+Project detail, dropdown provider lấy từ `/api/dashboard/settings` (không
+lặp danh sách). Test: `test_cost_estimate.py` (8 test). Đã xác nhận bằng
+trình duyệt thật trên dữ liệu dev thật. Cập nhật `dashboard.md`,
+`tech-debt.md`.
+
 ## 4. Bước tiếp theo
 
-1. Hỏi người dùng có muốn commit + push việc Settings vừa làm (và commit cũ
-   `8c62bf7` Publishing Phase 5) lên remote không — hiện CHƯA commit gì.
-2. Roadmap §20 core (Phase 0–5) đã xong về kiến trúc + vòng vận hành lõi của
-   dashboard. Việc còn mở: nối publish với 1 nền tảng thật (YouTube dễ nhất,
-   cần người dùng tự tạo OAuth app trên Google Cloud Console), cơ chế purge
-   thật cho retention, cơ chế giới hạn concurrency thật, Phase 6 (mở rộng),
-   hoặc việc nhỏ nâng chất lượng (dry-run cost §17.1, hiệu chuẩn
-   `speech_rate_cps`, `FitStrategy.VIDEO_STRETCH`, render/publishing preset
-   §14).
-3. Nếu có `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`, export
+Roadmap §20 core (Phase 0–5) đã xong về kiến trúc + vòng vận hành lõi của
+dashboard (Projects, Video Workspace, Batch Queue, Publishing Calendar,
+Settings, ước tính chi phí). Việc còn mở, chưa chọn cái nào tiếp theo:
+
+1. Nối publish với 1 nền tảng thật (YouTube dễ nhất — cần người dùng tự tạo
+   OAuth app trên Google Cloud Console, không tự làm được).
+2. Cơ chế purge thật cho retention (`RETENTION_DAYS` mới chỉ để xem ở
+   Settings, chưa có tiến trình đọc) — RỦI RO: phải tránh xoá file mà
+   `StageRun` cache vẫn còn trỏ tới (xem cảnh báo trong caching.md), nên cần
+   thiết kế cẩn thận (xoá kèm invalidate StageRun liên quan), KHÔNG làm vội.
+3. Cơ chế giới hạn concurrency thật (worker luôn `--pool=solo`).
+4. §17.1 chưa có API "submit batch N video" để gắn bước xác nhận trước khi
+   chạy — hiện chỉ là trang/CLI ước tính chủ động, không phải gate bắt buộc.
+5. Phase 6 (mở rộng): on-screen text inpainting (`onscreen_text` vẫn
+   `NotImplementedStage`), monitoring, regression tests. Lip-sync đã CHỐT
+   không làm cho MVP (§23).
+6. Việc nhỏ nâng chất lượng: hiệu chuẩn `speech_rate_cps` cho provider TTS
+   khác `macos_say`, `FitStrategy.VIDEO_STRETCH`, render/publishing preset
+   §14.
+7. Nếu có `HF_TOKEN`: `.venv/bin/pip install pyannote.audio`, export
    `HF_TOKEN`, chạy lại `scripts/run_pipeline.py` để xác nhận diarize +
    multi-voice TTS chạy thật.

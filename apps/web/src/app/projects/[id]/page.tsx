@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiError, type ProjectDetail } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
+import CostEstimatePanel from "@/components/CostEstimatePanel";
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -56,6 +57,13 @@ export default function ProjectDetailPage() {
             <li className="text-slate-400">Chưa có video nào</li>
           )}
         </ul>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+          Ước tính chi phí (§17.1)
+        </h2>
+        <CostEstimatePanel projectId={project.id} targetLocales={project.target_locales} />
       </section>
 
       <section>

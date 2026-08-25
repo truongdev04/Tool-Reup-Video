@@ -235,6 +235,31 @@ export interface SettingsStatus {
   };
 }
 
+export interface CostEstimateItem {
+  source_video_id: string;
+  filename: string;
+  locale: string;
+  source_chars_measured: boolean;
+  source_chars: number;
+  translated_chars_estimate: number;
+  tts_audio_seconds_estimate: number;
+  translation_cost_usd: number;
+  tts_cost_usd: number;
+  already_done: boolean;
+}
+
+export interface CostEstimate {
+  translation_provider: string;
+  tts_provider: string;
+  total_translation_cost_usd: number;
+  total_tts_cost_usd: number;
+  total_cost_usd: number;
+  total_tts_audio_seconds: number;
+  total_translated_chars: number;
+  warnings: string[];
+  items: CostEstimateItem[];
+}
+
 // ---------------------------------------------------------------------------
 // Calls
 // ---------------------------------------------------------------------------
@@ -285,6 +310,18 @@ export const api = {
     `${BASE_URL}/api/dashboard/publishing/authorize?${new URLSearchParams({ platform, label })}`,
 
   settingsStatus: () => request<SettingsStatus>("/api/dashboard/settings"),
+
+  estimateCost: (
+    projectId: string,
+    params: { locales: string[]; translation_provider: string; tts_provider: string },
+  ) => {
+    const qs = new URLSearchParams({
+      locales: params.locales.join(","),
+      translation_provider: params.translation_provider,
+      tts_provider: params.tts_provider,
+    });
+    return request<CostEstimate>(`/api/dashboard/projects/${projectId}/estimate?${qs}`);
+  },
 };
 
 export function apiBaseUrl(): string {
